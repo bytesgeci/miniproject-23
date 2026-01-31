@@ -1,0 +1,259 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+model User {
+  id               String      @id @default(cuid())
+  name             String
+  email            String       @unique
+  emailVerified    Boolean      @default(false)
+  phone           String?      @unique
+  department      String?
+  image            String?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  sessions         Session[]
+  accounts         Account[]
+  twoFactorEnabled Boolean      @default(false)
+  twoFactor        TwoFactor[]
+  role             String?
+  banned           Boolean?
+  banReason        String?
+  banExpires       DateTime?
+
+  @@map("user")
+}
+
+model Session {
+  id             String   @id @default(cuid())
+  expiresAt      DateTime
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  ipAddress      String?
+  userAgent      String?
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  impersonatedBy String?
+
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id @default(cuid())
+
+  // IMPORTANT: Better Auth required names
+  provider              String
+  providerAccountId     String
+  userId                String
+
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@unique([provider, providerAccountId])
+  @@map("account")
+}
+
+model Verification {
+  verification_id         String   @id @default(cuid())
+  identifier String
+  value      String
+  file_id    String?
+  item_id    String?
+  verified_by String?
+  status     String   @default("pending")
+  verifiedAt  DateTime?
+
+  @@map("verification")
+}
+model TwoFactor {
+  id          String   @id @default(cuid())
+  userId      String
+  secret      String
+  backupCodes String
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("twoFactor")
+}
+model user_roles{
+  userroleid        String   @id @default(cuid())
+  user_id        String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("user_roles")
+}
+model roles{
+  role_id        String   @id @default(cuid())
+  role_name      String
+}
+model semesters{
+  semester_id        String   @id @default(cuid())
+  semester_no      String
+  year_id      String 
+}
+model academic_years{
+  year_id        String   @id @default(cuid())
+  year      String
+}
+model courses{
+  course_id        String   @id @default(cuid())
+  course_name      String
+  course_code      String
+  credit_hours    Int
+  semester_id     String
+  regulations    String
+}
+model remarks{
+  remark_id        String   @id @default(cuid())
+  remark_text      String
+  verification_id   String
+  added_by       String
+  added_at      DateTime @default(now())
+}
+model course_assignments{
+  assignment_id        String   @id @default(cuid())
+  course_id      String
+  role   String
+  faculty_id    String
+}
+model faculty{
+  faculty_id        String   @id @default(cuid())
+  faculty_name      String
+  faculty_courses   String
+  faculty_reports   String
+  last_updated      DateTime @default(now())
+}
+model course_file{
+  file_id        String   @id @default(cuid())
+  course_id      String
+  faculty_id    String
+  status       String
+  uploaded_at    DateTime @default(now())
+}
+model co_document{
+  document_id        String   @id @default(cuid())
+  course_id      String
+  co_details     String
+  file_id       String
+  type         String
+  uploadeed_at    DateTime @default(now())
+}
+model po_document{
+  document_id        String   @id @default(cuid())
+  course_id      String
+  po_details     String
+  file_id       String
+  type         String
+  uploadeed_at    DateTime @default(now())
+}
+model checklist{
+  checklist_id        String   @id @default(cuid())
+  course_id      String
+  checklist_name   String
+  status       String
+  applicable_to   String
+  updated_at    DateTime @default(now())
+}
+model checklist_item{
+  item_id        String   @id @default(cuid())
+  checklist_id   String
+  item_name      String
+  status       String
+  updated_at    DateTime @default(now())
+}
+model internships{
+  internship_id        String   @id @default(cuid())
+  student_id      String
+  company_name    String
+  position       String
+  start_date     DateTime
+  end_date       DateTime
+  status         String
+}
+model student{
+  student_id        String   @id @default(cuid())
+  student_name      String
+  department       String
+  year_of_study    Int
+  reg_number      String
+}
+model student_document{
+  document_id        String   @id @default(cuid())
+  student_id      String
+  document_type   String
+  uploaded_at    DateTime @default(now())
+}
+model student_activities{
+  activity_id        String   @id @default(cuid())
+  student_id      String
+  event_id        String
+  activity_name   String
+  activity_points Int
+  description    String
+  date          DateTime
+}
+model community{
+  community_id        String   @id @default(cuid())
+  community_name      String
+  created_at      DateTime @default(now())
+}
+model event{
+  event_id        String   @id @default(cuid())
+  event_name      String
+  event_date     DateTime
+  location      String
+  description   String
+}
+model audit_logs{
+  log_id        String   @id @default(cuid())
+  user_id      String
+  action       String
+  timestamp    DateTime @default(now())
+}
+model ext_access{
+  access_id        String   @id @default(cuid())
+  user_id      String
+  resource     String
+  access_level String
+  granted_at   DateTime @default(now())
+}
+model notifications{
+  notification_id        String   @id @default(cuid())
+  user_id          String
+  message        String
+  is_read        Boolean   @default(false)
+  sent_at        DateTime  @default(now())
+}
+model feedback{
+  feedback_id        String   @id @default(cuid())
+  user_id        String
+  content       String
+  created_at    DateTime @default(now())
+}
+model reports{
+  report_id        String   @id @default(cuid())
+  title         String
+  content       String
+  created_by    String
+  created_at    DateTime @default(now())
+}
