@@ -13,7 +13,7 @@
 ## For reuse:-
 ## 📦 Installation
 ```bash
-git clone https://github.com/dheeraj-2607/Fac_management_vibecodedGUI.git
+git clone https://github.com/bytesgeci/miniproject-23.git
 cd Fac_management_vibecodedGUI
 # install dependencies
   
