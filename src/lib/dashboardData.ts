@@ -245,8 +245,77 @@ export async function getFacultyDashboardData(
 
     return data;
   } catch (error) {
-    console.error("Error fetching faculty dashboard data:", error);
-    // Fallback to empty data
+    console.error(
+      "Error fetching faculty dashboard data from backend API:",
+      error,
+    );
+
+    // Fallback for hosted environments where external BACKEND_URL may be missing
+    // or temporarily unavailable. Pull faculty users directly from userStore.
+    try {
+      const users = await getAllUsers();
+      const facultyMembers: FacultyMember[] = users
+        .filter((user) => {
+          const primaryRole = normalizeRoleInput(user.role);
+          const normalizedRoles = Array.isArray(user.roles)
+            ? (user.roles
+                .map((role) => normalizeRoleInput(role))
+                .filter(Boolean) as string[])
+            : [];
+
+          return (
+            primaryRole === "faculty" || normalizedRoles.includes("faculty")
+          );
+        })
+        .map((user) => {
+          const normalizedRoles = Array.isArray(user.roles)
+            ? (user.roles
+                .map((role) => normalizeRoleInput(role))
+                .filter(Boolean) as string[])
+            : [];
+
+          return {
+            id: serializeId(user.id),
+            name: String(user.name || user.username || "Faculty"),
+            department: String(user.department || ""),
+            role: String(user.role || "faculty"),
+            roles: normalizedRoles,
+            isStaffAdvisor: normalizedRoles.includes("staff-advisor"),
+            email: String(user.email || user.username || ""),
+            phone: String(user.phone || ""),
+            courses: [],
+            specialization: "",
+            experience: "",
+            profileImageUrl: "",
+            resumeUrl: "",
+            resumeFileName: "",
+          };
+        });
+
+      const fallbackData = {
+        stats: {
+          totalFiles: 0,
+          totalReports: 0,
+          pendingReports: 0,
+          totalParticipants: 0,
+          recentActivity: [],
+        },
+        facultyMembers,
+      };
+
+      facultyDashboardCache.set(cacheKey, {
+        data: cloneFacultyDashboardData(fallbackData),
+        expiresAt: Date.now() + FACULTY_DASHBOARD_CACHE_TTL_MS,
+      });
+
+      return fallbackData;
+    } catch (fallbackError) {
+      console.error(
+        "Fallback faculty dashboard data load failed:",
+        fallbackError,
+      );
+    }
+
     return {
       stats: {
         totalFiles: 0,

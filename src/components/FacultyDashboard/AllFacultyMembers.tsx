@@ -61,8 +61,8 @@ export const AllFacultyMembers = memo(function AllFacultyMembers({
           </div>
         ) : (
           <p className="text-sm text-slate-500">
-            No faculty members available right now. Please refresh after the
-            backend is running.
+            No faculty members available right now. Please refresh, then verify
+            production environment variables and database connection.
           </p>
         )}
         {canShowMore ? (
