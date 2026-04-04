@@ -351,7 +351,7 @@ export async function getAuditorDashboardData(): Promise<{
       completionRate: 0,
     };
 
-    const facultyMembers: AuditorFacultyMember[] = (
+    let facultyMembers: AuditorFacultyMember[] = (
       engagements.engagements || []
     ).map((eng: any) => ({
       id: eng.facultyId,
@@ -372,6 +372,44 @@ export async function getAuditorDashboardData(): Promise<{
       resumeUrl: "",
       resumeFileName: "",
     }));
+
+    // Hosted fallback: if engagement list is empty, still surface faculty users
+    // so auditor panels are not blank when there are no uploads yet.
+    if (facultyMembers.length === 0) {
+      const users = await getAllUsers();
+      facultyMembers = users
+        .filter((user) => {
+          const primaryRole = normalizeRoleInput(user.role);
+          const normalizedRoles = Array.isArray(user.roles)
+            ? (user.roles
+                .map((role) => normalizeRoleInput(role))
+                .filter(Boolean) as string[])
+            : [];
+
+          return (
+            primaryRole === "faculty" || normalizedRoles.includes("faculty")
+          );
+        })
+        .map((user) => ({
+          id: serializeId(user.id),
+          name: String(user.name || user.username || "Faculty"),
+          department: String(user.department || ""),
+          totalFiles: 0,
+          totalReports: 0,
+          approvedFiles: 0,
+          approvedReports: 0,
+          pendingFiles: 0,
+          pendingReports: 0,
+          rejectedFiles: 0,
+          rejectedReports: 0,
+          email: String(user.email || user.username || ""),
+          phone: String(user.phone || ""),
+          experience: "",
+          profileImageUrl: "",
+          resumeUrl: "",
+          resumeFileName: "",
+        }));
+    }
 
     stats.totalFaculty = facultyMembers.length;
     stats.totalFiles = facultyMembers.reduce(
