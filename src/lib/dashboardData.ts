@@ -100,15 +100,29 @@ function cloneFacultyDashboardData(
  * Fetch dashboard data from MongoDB via API
  */
 async function fetchFromDashboardAPI<T>(endpoint: string): Promise<T> {
+  const normalizeBaseUrl = (value: string | undefined) => {
+    const normalized = String(value || "")
+      .trim()
+      .replace(/\/$/, "");
+
+    if (!normalized) return "";
+
+    // Ignore template placeholders that are easy to accidentally ship.
+    if (/replace-with-backend-url/i.test(normalized)) {
+      return "";
+    }
+
+    if (!/^https?:\/\//i.test(normalized)) {
+      return "";
+    }
+
+    return normalized;
+  };
+
   const backendUrlCandidates = [
-    process.env.NEXT_PUBLIC_BACKEND_URL,
-    process.env.BACKEND_URL,
+    normalizeBaseUrl(process.env.NEXT_PUBLIC_BACKEND_URL),
+    normalizeBaseUrl(process.env.BACKEND_URL),
   ]
-    .map((value) =>
-      String(value || "")
-        .trim()
-        .replace(/\/$/, ""),
-    )
     .filter(Boolean)
     .filter((value, index, array) => array.indexOf(value) === index);
 

@@ -34,13 +34,21 @@ cd backend && npm install
 
 ### 2. Configure environment variables
 
-Create/update env files from templates in the root:
+Use a single root env file for local development:
 
-- `.env.example`
-- `.env.local.example`
-- `.env.template`
+- Copy `.env.local.example` to `.env.local`
+- Set local backend URL in `.env.local`:
 
-Also configure backend environment values in `backend/` as needed.
+```bash
+NEXT_PUBLIC_BACKEND_URL=http://localhost:5010
+BACKEND_URL=http://localhost:5010
+```
+
+For Vercel deployment, configure these in Vercel Project Settings -> Environment Variables:
+
+- `NEXT_PUBLIC_BACKEND_URL=https://<your-backend-domain>`
+- `BACKEND_URL=https://<your-backend-domain>`
+- Other required Firebase/MongoDB secrets from `.env.local.example`
 
 ### 3. Run frontend (root)
 
