@@ -573,7 +573,35 @@ export async function deleteUserById(id: string) {
     return;
   }
 
-  const resolvedId = String(existingUser.id || id);
-  await collection.deleteOne({ _id: resolvedId });
+  const resolvedId = String(existingUser.id || id).trim();
+  const normalizedUsername = normalizeIdentity(existingUser.username || "");
+  const normalizedEmail = normalizeIdentity(existingUser.email || "");
+
+  const idCandidates = [resolvedId, String(id || "").trim()].filter(Boolean);
+  const idFilter = idCandidates.flatMap((value) => {
+    const filters: Record<string, any>[] = [
+      { _id: value },
+      { id: value },
+      { firebaseUid: value },
+    ];
+
+    if (ObjectId.isValid(value)) {
+      filters.push({ _id: new ObjectId(value) });
+    }
+
+    return filters;
+  });
+
+  const identityFilter: Record<string, any>[] = [];
+  if (normalizedUsername) {
+    identityFilter.push({ username: normalizedUsername });
+  }
+  if (normalizedEmail) {
+    identityFilter.push({ email: normalizedEmail });
+  }
+
+  await collection.deleteMany({
+    $or: [...idFilter, ...identityFilter],
+  });
   invalidateUsersCache();
 }
