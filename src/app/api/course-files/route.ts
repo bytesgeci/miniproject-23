@@ -12,6 +12,7 @@ import { isValidBatchYear, normalizeBatchYear } from "@/lib/batchYear";
 
 // Force Node.js runtime for file system operations
 export const runtime = "nodejs";
+const MAX_DATA_URL_UPLOAD_BYTES = 5 * 1024 * 1024;
 
 function parsePositiveInt(value: string | null, fallback: number) {
   if (!value) {
@@ -29,6 +30,25 @@ function toBooleanFlag(value: string | null, fallback: boolean) {
     return fallback;
   }
   return value !== "0" && value.toLowerCase() !== "false";
+}
+
+function estimateDataUrlBytes(dataUrl: string) {
+  const commaIndex = dataUrl.indexOf(",");
+  if (commaIndex === -1) {
+    return 0;
+  }
+
+  const base64Payload = dataUrl.slice(commaIndex + 1).trim();
+  if (!base64Payload) {
+    return 0;
+  }
+
+  const padding = base64Payload.endsWith("==")
+    ? 2
+    : base64Payload.endsWith("=")
+      ? 1
+      : 0;
+  return Math.floor((base64Payload.length * 3) / 4) - padding;
 }
 
 export async function POST(request: NextRequest) {
@@ -63,23 +83,38 @@ export async function POST(request: NextRequest) {
     const facultyUser = users.find((user) => user.id === payload.facultyId);
     const timestamp = new Date().toISOString();
 
-    // Save file to course code folder and get the file path
+    // Validate and keep data URL; persisted via Mongo-backed jsonDb writer.
     let documentUrl = payload.documentUrl;
     if (payload.documentUrl && payload.documentUrl.startsWith("data:")) {
+      const estimatedBytes = estimateDataUrlBytes(payload.documentUrl);
+      if (estimatedBytes <= 0) {
+        return NextResponse.json(
+          { error: "Invalid uploaded file data" },
+          { status: 400 },
+        );
+      }
+
+      if (estimatedBytes > MAX_DATA_URL_UPLOAD_BYTES) {
+        return NextResponse.json(
+          {
+            error:
+              "File too large. Maximum supported upload size is 5MB for MongoDB storage.",
+          },
+          { status: 413 },
+        );
+      }
+
       try {
-        console.log(`Saving file for course code: ${payload.courseCode}`);
         documentUrl = await saveDataUrlAsFile(
           payload.courseCode,
           payload.fileName,
           payload.documentUrl,
         );
-        console.log(`File saved successfully: ${documentUrl}`);
       } catch (error) {
-        console.error("Error saving file to folder:", error);
-        // Return error instead of falling back - we want to know if this fails
+        console.error("Error processing file payload:", error);
         return NextResponse.json(
-          { error: "Failed to save file to disk" },
-          { status: 500 },
+          { error: "Failed to process uploaded file data" },
+          { status: 400 },
         );
       }
     }

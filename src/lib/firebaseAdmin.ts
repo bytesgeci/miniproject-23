@@ -6,6 +6,19 @@ import { getStorage } from "firebase-admin/storage";
 // Initialize Firebase Admin SDK (server-side only)
 const apps = getApps();
 
+function resolveStorageBucketName() {
+  const raw =
+    process.env.FIREBASE_STORAGE_BUCKET ||
+    process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET ||
+    "";
+
+  return String(raw)
+    .trim()
+    .replace(/^gs:\/\//i, "")
+    .replace(/^https?:\/\//i, "")
+    .replace(/\/$/, "");
+}
+
 let adminApp;
 if (!apps.length) {
   // Try to initialize with service account
@@ -24,13 +37,15 @@ if (!apps.length) {
       });
     }
 
+    const storageBucket = resolveStorageBucketName();
+
     adminApp = initializeApp({
       credential: cert({
         projectId,
         clientEmail,
         privateKey,
       }),
-      storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+      ...(storageBucket ? { storageBucket } : {}),
     });
 
     console.log(
