@@ -48,15 +48,21 @@ export const FacultySubmissionStatus = memo(function FacultySubmissionStatus({
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="space-y-3">
-          {visibleFaculty.map((faculty) => (
-            <FacultyCard
-              key={faculty.id}
-              faculty={faculty}
-              onClick={onSelectFaculty}
-            />
-          ))}
-        </div>
+        {visibleFaculty.length > 0 ? (
+          <div className="space-y-3">
+            {visibleFaculty.map((faculty) => (
+              <FacultyCard
+                key={faculty.id}
+                faculty={faculty}
+                onClick={onSelectFaculty}
+              />
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-slate-500">
+            No course files or event reports are currently waiting for auditing.
+          </p>
+        )}
         {canShowMore ? (
           <div className="mt-4 flex justify-center">
             <Button

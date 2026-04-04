@@ -318,6 +318,66 @@ router.get("/engagements", async (req, res) => {
 });
 
 /**
+ * GET /api/dashboard/pending-audit-faculty
+ * Get faculty with pending items that require auditing
+ */
+router.get("/pending-audit-faculty", async (req, res) => {
+  try {
+    const pendingQuery = buildStatusOrQuery(LEGACY_PENDING_STATUSES);
+
+    const [pendingFiles, pendingReports] = await Promise.all([
+      UploadedFile.find(pendingQuery).select("facultyId").lean(),
+      EventReport.find({ ...pendingQuery, deletedAt: null })
+        .select("facultyId")
+        .lean(),
+    ]);
+
+    const pendingByFaculty = new Map();
+
+    for (const file of pendingFiles) {
+      const facultyId = file?.facultyId?.toString();
+      if (!facultyId) continue;
+
+      const current = pendingByFaculty.get(facultyId) || {
+        pendingFiles: 0,
+        pendingReports: 0,
+      };
+      current.pendingFiles += 1;
+      pendingByFaculty.set(facultyId, current);
+    }
+
+    for (const report of pendingReports) {
+      const facultyId = report?.facultyId?.toString();
+      if (!facultyId) continue;
+
+      const current = pendingByFaculty.get(facultyId) || {
+        pendingFiles: 0,
+        pendingReports: 0,
+      };
+      current.pendingReports += 1;
+      pendingByFaculty.set(facultyId, current);
+    }
+
+    const pendingFaculty = Array.from(pendingByFaculty.entries()).map(
+      ([facultyId, counts]) => ({
+        facultyId,
+        pendingFiles: counts.pendingFiles,
+        pendingReports: counts.pendingReports,
+        totalPending: counts.pendingFiles + counts.pendingReports,
+      }),
+    );
+
+    res.json({
+      pendingFaculty,
+      totalFaculty: pendingFaculty.length,
+    });
+  } catch (error) {
+    console.error("Error fetching pending audit faculty:", error);
+    res.status(500).json({ error: "Failed to fetch pending audit faculty" });
+  }
+});
+
+/**
  * GET /api/dashboard/students
  * Get student data
  */

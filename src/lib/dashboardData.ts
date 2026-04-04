@@ -69,6 +69,16 @@ interface EngagementsResponse {
   }>;
 }
 
+interface PendingAuditFacultyResponse {
+  pendingFaculty: Array<{
+    facultyId: string;
+    pendingFiles?: number;
+    pendingReports?: number;
+    totalPending?: number;
+  }>;
+  totalFaculty?: number;
+}
+
 interface StudentsResponse {
   students: Student[];
 }
@@ -376,39 +386,114 @@ export async function getAuditorDashboardData(): Promise<{
     // Hosted fallback: if engagement list is empty, still surface faculty users
     // so auditor panels are not blank when there are no uploads yet.
     if (facultyMembers.length === 0) {
-      const users = await getAllUsers();
-      facultyMembers = users
-        .filter((user) => {
-          const primaryRole = normalizeRoleInput(user.role);
-          const normalizedRoles = Array.isArray(user.roles)
-            ? (user.roles
-                .map((role) => normalizeRoleInput(role))
-                .filter(Boolean) as string[])
-            : [];
+      try {
+        const dashboardFaculty =
+          await fetchFromDashboardAPI<FacultyListResponse>("/faculty-list");
+        facultyMembers = (dashboardFaculty.facultyMembers || []).map(
+          (member) => ({
+            id: member.id,
+            name: member.name,
+            department: member.department || "",
+            totalFiles: 0,
+            totalReports: 0,
+            approvedFiles: 0,
+            approvedReports: 0,
+            pendingFiles: 0,
+            pendingReports: 0,
+            rejectedFiles: 0,
+            rejectedReports: 0,
+            email: member.email || "",
+            phone: member.phone || "",
+            experience: member.experience || "",
+            profileImageUrl: member.profileImageUrl || "",
+            resumeUrl: member.resumeUrl || "",
+            resumeFileName: member.resumeFileName || "",
+          }),
+        );
+      } catch {
+        const users = await getAllUsers();
+        facultyMembers = users
+          .filter((user) => {
+            const primaryRole = normalizeRoleInput(user.role);
+            const normalizedRoles = Array.isArray(user.roles)
+              ? (user.roles
+                  .map((role) => normalizeRoleInput(role))
+                  .filter(Boolean) as string[])
+              : [];
 
-          return (
-            primaryRole === "faculty" || normalizedRoles.includes("faculty")
-          );
+            return (
+              primaryRole === "faculty" || normalizedRoles.includes("faculty")
+            );
+          })
+          .map((user) => ({
+            id: serializeId(user.id),
+            name: String(user.name || user.username || "Faculty"),
+            department: String(user.department || ""),
+            totalFiles: 0,
+            totalReports: 0,
+            approvedFiles: 0,
+            approvedReports: 0,
+            pendingFiles: 0,
+            pendingReports: 0,
+            rejectedFiles: 0,
+            rejectedReports: 0,
+            email: String(user.email || user.username || ""),
+            phone: String(user.phone || ""),
+            experience: "",
+            profileImageUrl: "",
+            resumeUrl: "",
+            resumeFileName: "",
+          }));
+      }
+    }
+
+    // Enforce auditor visibility rule: only show faculty with pending audits.
+    try {
+      const pendingAuditData =
+        await fetchFromDashboardAPI<PendingAuditFacultyResponse>(
+          "/pending-audit-faculty",
+        );
+
+      const pendingByFacultyId = new Map(
+        (pendingAuditData.pendingFaculty || []).map((row) => [
+          String(row.facultyId || ""),
+          {
+            pendingFiles: row.pendingFiles ?? 0,
+            pendingReports: row.pendingReports ?? 0,
+            totalPending: row.totalPending ?? 0,
+          },
+        ]),
+      );
+
+      facultyMembers = facultyMembers
+        .map((member) => {
+          const pending = pendingByFacultyId.get(String(member.id || ""));
+          return {
+            ...member,
+            pendingFiles: pending?.pendingFiles ?? 0,
+            pendingReports: pending?.pendingReports ?? 0,
+          };
         })
-        .map((user) => ({
-          id: serializeId(user.id),
-          name: String(user.name || user.username || "Faculty"),
-          department: String(user.department || ""),
-          totalFiles: 0,
-          totalReports: 0,
-          approvedFiles: 0,
-          approvedReports: 0,
-          pendingFiles: 0,
-          pendingReports: 0,
-          rejectedFiles: 0,
-          rejectedReports: 0,
-          email: String(user.email || user.username || ""),
-          phone: String(user.phone || ""),
-          experience: "",
-          profileImageUrl: "",
-          resumeUrl: "",
-          resumeFileName: "",
-        }));
+        .filter(
+          (member) =>
+            (member.pendingFiles || 0) > 0 || (member.pendingReports || 0) > 0,
+        );
+
+      stats.pendingFiles = facultyMembers.reduce(
+        (sum, member) => sum + (member.pendingFiles || 0),
+        0,
+      );
+      stats.pendingReports = facultyMembers.reduce(
+        (sum, member) => sum + (member.pendingReports || 0),
+        0,
+      );
+    } catch (error) {
+      console.warn(
+        "Pending audit filter fetch failed; using legacy auditor list",
+        {
+          message: error instanceof Error ? error.message : String(error),
+        },
+      );
     }
 
     stats.totalFaculty = facultyMembers.length;
