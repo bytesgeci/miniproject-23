@@ -1,7 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { existsSync } from "fs";
-import { mkdir, unlink, writeFile } from "fs/promises";
-import { join } from "path";
 import { findUserById, updateUserById } from "@/lib/userStore";
 import { invalidateCachedProfile, setCachedProfile } from "@/lib/profileCache";
 
@@ -16,10 +13,6 @@ const ALLOWED_MIME_TYPES = new Set([
 ]);
 const FALLBACK_MIME_TYPES = new Set(["", "application/octet-stream"]);
 
-function sanitizeSegment(value: string) {
-  return value.replace(/[^a-zA-Z0-9_-]/g, "_");
-}
-
 function getFileExtension(fileName: string) {
   const index = fileName.lastIndexOf(".");
   if (index < 0) {
@@ -28,8 +21,13 @@ function getFileExtension(fileName: string) {
   return fileName.slice(index).toLowerCase();
 }
 
-function sanitizeFileName(fileName: string) {
-  return fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+async function fileToDataUrl(file: File) {
+  const bytes = await file.arrayBuffer();
+  const mimeType = String(
+    file.type || "application/octet-stream",
+  ).toLowerCase();
+  const base64 = Buffer.from(bytes).toString("base64");
+  return `data:${mimeType};base64,${base64}`;
 }
 
 export async function POST(request: NextRequest) {
@@ -95,41 +93,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const safeUserId = sanitizeSegment(userId);
-    const baseUploadDir = join(process.cwd(), "public", "uploads", "resumes");
-    const userUploadDir = join(baseUploadDir, safeUserId);
-
-    if (!existsSync(baseUploadDir)) {
-      await mkdir(baseUploadDir, { recursive: true });
-    }
-
-    if (!existsSync(userUploadDir)) {
-      await mkdir(userUploadDir, { recursive: true });
-    }
-
-    if (user.resumeUrl && user.resumeUrl.startsWith("/uploads/resumes/")) {
-      const existingFilePath = join(
-        process.cwd(),
-        "public",
-        user.resumeUrl.replace(/^\//, ""),
-      );
-
-      if (existsSync(existingFilePath)) {
-        await unlink(existingFilePath).catch(() => {
-          // Non-fatal cleanup failure.
-        });
-      }
-    }
-
-    const timestamp = Date.now();
-    const safeFileName = sanitizeFileName(resume.name);
-    const storedFileName = `${timestamp}_${safeFileName}`;
-    const filePath = join(userUploadDir, storedFileName);
-
-    const fileBytes = await resume.arrayBuffer();
-    await writeFile(filePath, Buffer.from(fileBytes));
-
-    const resumeUrl = `/uploads/resumes/${safeUserId}/${storedFileName}`;
+    const resumeUrl = await fileToDataUrl(resume);
     const updatedUser = await updateUserById(userId, {
       resumeUrl,
       resumeFileName: resume.name,

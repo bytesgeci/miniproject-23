@@ -1,7 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { existsSync } from "fs";
-import { mkdir, unlink, writeFile } from "fs/promises";
-import { join } from "path";
 import { findUserById, updateUserById } from "@/lib/userStore";
 import { invalidateCachedProfile, setCachedProfile } from "@/lib/profileCache";
 
@@ -18,10 +15,6 @@ const ALLOWED_MIME_TYPES = new Set([
 ]);
 const FALLBACK_MIME_TYPES = new Set(["", "application/octet-stream"]);
 
-function sanitizeSegment(value: string) {
-  return value.replace(/[^a-zA-Z0-9_-]/g, "_");
-}
-
 function sanitizeFileName(fileName: string) {
   return fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
@@ -32,6 +25,15 @@ function getFileExtension(fileName: string) {
     return "";
   }
   return fileName.slice(index).toLowerCase();
+}
+
+async function fileToDataUrl(file: File) {
+  const bytes = await file.arrayBuffer();
+  const mimeType = String(
+    file.type || "application/octet-stream",
+  ).toLowerCase();
+  const base64 = Buffer.from(bytes).toString("base64");
+  return `data:${mimeType};base64,${base64}`;
 }
 
 export async function POST(request: NextRequest) {
@@ -86,51 +88,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    const safeUserId = sanitizeSegment(userId);
-    const baseUploadDir = join(
-      process.cwd(),
-      "public",
-      "uploads",
-      "profile-images",
-    );
-    const userUploadDir = join(baseUploadDir, safeUserId);
-
-    if (!existsSync(baseUploadDir)) {
-      await mkdir(baseUploadDir, { recursive: true });
-    }
-
-    if (!existsSync(userUploadDir)) {
-      await mkdir(userUploadDir, { recursive: true });
-    }
-
-    if (
-      user.profileImageUrl &&
-      user.profileImageUrl.startsWith("/uploads/profile-images/")
-    ) {
-      const existingFilePath = join(
-        process.cwd(),
-        "public",
-        user.profileImageUrl.replace(/^\//, ""),
-      );
-
-      if (existsSync(existingFilePath)) {
-        await unlink(existingFilePath).catch(() => {
-          // Non-fatal cleanup failure.
-        });
-      }
-    }
-
-    const timestamp = Date.now();
     const safeFileName = sanitizeFileName(image.name);
-    const storedFileName = `${timestamp}_${safeFileName}`;
-    const filePath = join(userUploadDir, storedFileName);
+    const profileImageUrl = await fileToDataUrl(image);
 
-    const fileBytes = await image.arrayBuffer();
-    await writeFile(filePath, Buffer.from(fileBytes));
-
-    const profileImageUrl = `/uploads/profile-images/${safeUserId}/${storedFileName}`;
     const updatedUser = await updateUserById(userId, {
       profileImageUrl,
+      profileImageFileName: safeFileName,
       profileImageUpdatedAt: new Date().toISOString(),
     });
 
