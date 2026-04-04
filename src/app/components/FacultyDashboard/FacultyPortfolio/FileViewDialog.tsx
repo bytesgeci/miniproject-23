@@ -11,7 +11,7 @@ import { Alert, AlertDescription } from "../../ui/alert";
 import { Card, CardContent, CardHeader, CardTitle } from "../../ui/card";
 import { Download, MessageCircle } from "lucide-react";
 import { CourseFile } from "./types";
-import { EntityMessagesPanel } from "../../shared/messages/EntityMessagesPanel";
+import { EntityMessagesPanel } from "@/components/shared/messages/EntityMessagesPanel";
 
 interface FileViewDialogProps {
   open: boolean;

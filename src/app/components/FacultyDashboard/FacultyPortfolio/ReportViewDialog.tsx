@@ -10,7 +10,7 @@ import { Alert, AlertDescription } from "../../ui/alert";
 import { Card, CardContent, CardHeader, CardTitle } from "../../ui/card";
 import { MessageCircle } from "lucide-react";
 import { EventReport } from "./types";
-import { EntityMessagesPanel } from "../../shared/messages/EntityMessagesPanel";
+import { EntityMessagesPanel } from "@/components/shared/messages/EntityMessagesPanel";
 
 interface ReportViewDialogProps {
   open: boolean;
