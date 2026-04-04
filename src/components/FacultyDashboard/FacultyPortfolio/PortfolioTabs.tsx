@@ -10,6 +10,7 @@ import { CourseCodeCards } from "./CourseCodeCards";
 import { StudentListTab } from "./StudentListTab";
 
 interface PortfolioTabsProps {
+  facultyId?: string;
   courseFiles: CourseFile[];
   eventReports: EventReport[];
   courseFilesPage: number;
@@ -27,6 +28,7 @@ interface PortfolioTabsProps {
 }
 
 export function PortfolioTabs({
+  facultyId,
   courseFiles,
   eventReports,
   courseFilesPage,
@@ -182,6 +184,7 @@ export function PortfolioTabs({
                 <EventReportCard
                   key={report.id}
                   report={report}
+                  facultyId={facultyId}
                   onView={onViewReport}
                   getStatusColor={getStatusColor}
                 />

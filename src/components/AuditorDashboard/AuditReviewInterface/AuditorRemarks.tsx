@@ -11,6 +11,7 @@ interface AuditorRemarksProps {
   item: CourseFile | EventReport;
   auditorRemarks: string;
   onRemarksChange: (remarks: string) => void;
+  onSendRemarks?: () => Promise<void>;
   reviewDecision: "approve" | "reject" | null;
   onDecisionChange: (decision: "approve" | "reject") => void;
   onSubmit: () => void;
@@ -22,6 +23,7 @@ export function AuditorRemarks({
   type,
   auditorRemarks,
   onRemarksChange,
+  onSendRemarks,
   reviewDecision,
   onDecisionChange,
   onSubmit,
@@ -62,19 +64,25 @@ export function AuditorRemarks({
             rows={6}
           />
           <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
+            variant="default"
+            size="default"
+            onClick={async () => {
               if (!auditorRemarks.trim()) {
                 toast.error("Please provide remarks before sending");
                 return;
               }
-              toast.success("Remarks saved successfully");
+
+              if (onSendRemarks) {
+                await onSendRemarks();
+                return;
+              }
+
+              toast.success("Remarks sent successfully");
             }}
-            className="w-full sm:w-auto"
+            className="w-full"
           >
             <Send className="h-4 w-4 mr-2" />
-            Send Remarks
+            Send Remarks To Faculty
           </Button>
         </div>
 

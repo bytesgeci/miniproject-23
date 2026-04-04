@@ -9,6 +9,8 @@ import { DocumentViewer } from "./DocumentViewer";
 import { DocumentDetails } from "./DocumentDetails";
 import { AuditorRemarks } from "./AuditorRemarks";
 import { AuditReviewInterfaceProps, ChecklistItem } from "./types";
+import { useAuth } from "@/context/AuthContext";
+import { sendMessage } from "@/lib/messageClient";
 
 const theoryCourseFileChecklist: ChecklistItem[] = [
   { id: "co_po_mapping", label: "CO–PO Mapping (CO–PO Mapping Level)" },
@@ -95,8 +97,10 @@ export function AuditReviewInterface({
   type,
   item,
   facultyName,
+  facultyId,
   onBack,
 }: AuditReviewInterfaceProps) {
+  const { user } = useAuth();
   const [checkedItems, setCheckedItems] = useState<
     Record<string, "yes" | "no" | "pending">
   >({});
@@ -125,6 +129,46 @@ export function AuditReviewInterface({
       `${type === "file" ? "Course file" : "Event report"} ${reviewDecision}d successfully`,
     );
     onBack();
+  };
+
+  const handleSendRemarks = async () => {
+    if (!auditorRemarks.trim()) {
+      toast.error("Please provide remarks before sending");
+      return;
+    }
+
+    const targetFacultyId =
+      facultyId || (item as { facultyId?: string }).facultyId;
+    if (!targetFacultyId) {
+      toast.error("Faculty ID is missing. Unable to send remarks.");
+      return;
+    }
+
+    const entityType = type === "file" ? "course-file" : "event-report";
+    const threadId = `${entityType}:${item.id}`;
+
+    try {
+      await sendMessage({
+        facultyId: targetFacultyId,
+        auditorId: user?.id,
+        entityType,
+        entityId: item.id,
+        threadId,
+        senderRole: "auditor",
+        senderName: user?.name,
+        message: auditorRemarks,
+        status: "pending",
+      });
+
+      setAuditorRemarks("");
+      toast.success("Remarks sent successfully");
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("dashboard:data-updated"));
+      }
+    } catch (error) {
+      console.error("Send remarks error:", error);
+      toast.error("Failed to send remarks");
+    }
   };
 
   const handleDownloadSheet = () => {
@@ -246,6 +290,7 @@ export function AuditReviewInterface({
             item={item}
             auditorRemarks={auditorRemarks}
             onRemarksChange={setAuditorRemarks}
+            onSendRemarks={handleSendRemarks}
             reviewDecision={reviewDecision}
             onDecisionChange={setReviewDecision}
             onSubmit={handleSubmitReview}

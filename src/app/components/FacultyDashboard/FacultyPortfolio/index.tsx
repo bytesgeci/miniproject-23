@@ -77,6 +77,7 @@ export function FacultyPortfolio({ faculty, onBack }: FacultyPortfolioProps) {
       <BackButton onBack={onBack} />
       <ProfileHeader faculty={faculty} />
       <PortfolioTabs
+        facultyId={faculty.id}
         courseFiles={courseFiles}
         eventReports={eventReports}
         onViewFile={handleViewFile}
@@ -89,6 +90,7 @@ export function FacultyPortfolio({ faculty, onBack }: FacultyPortfolioProps) {
         onOpenChange={setIsFileViewOpen}
         file={selectedFile}
         getStatusColor={getStatusColor}
+        facultyId={faculty.id}
       />
 
       <ReportViewDialog
@@ -96,6 +98,7 @@ export function FacultyPortfolio({ faculty, onBack }: FacultyPortfolioProps) {
         onOpenChange={setIsReportViewOpen}
         report={selectedReport}
         getStatusColor={getStatusColor}
+        facultyId={faculty.id}
       />
     </div>
   );

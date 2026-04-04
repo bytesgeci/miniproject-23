@@ -94,6 +94,7 @@ export function FacultyAuditPortfolio({
         type={reviewType}
         item={reviewType === "file" ? selectedFile! : selectedReport!}
         facultyName={faculty.name}
+        facultyId={faculty.id}
         onBack={() => setIsReviewOpen(false)}
       />
     );

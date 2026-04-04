@@ -12,8 +12,10 @@ import {
   Clock,
   ChevronDown,
   ChevronRight,
+  MessageCircle,
 } from "lucide-react";
 import { CourseFile } from "./types";
+import { FileMessagesDialog } from "./FileMessagesDialog";
 
 interface CourseCodeCardsProps {
   courseFiles: CourseFile[];
@@ -81,6 +83,8 @@ export function CourseCodeCards({
   const [expandedChecklistCodes, setExpandedChecklistCodes] = useState<
     Record<string, boolean>
   >({});
+  const [messageFile, setMessageFile] = useState<CourseFile | null>(null);
+  const [isMessageDialogOpen, setIsMessageDialogOpen] = useState(false);
   const groupedFiles = groupByCourseCode(courseFiles);
   const courseCodes = Object.keys(groupedFiles).sort();
 
@@ -311,6 +315,21 @@ export function CourseCodeCards({
                             <Download className="h-4 w-4" />
                           </Button>
                         )}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => {
+                            setMessageFile(file);
+                            setIsMessageDialogOpen(true);
+                          }}
+                          className="h-8 px-2 bg-blue-50 hover:bg-blue-100 text-blue-600"
+                          title="View messages from auditor"
+                        >
+                          <MessageCircle className="h-4 w-4" />
+                          <Badge variant="secondary" className="ml-1 h-5">
+                            !
+                          </Badge>
+                        </Button>
                       </div>
                     </div>
                   ))}
@@ -320,6 +339,12 @@ export function CourseCodeCards({
           </Card>
         );
       })}
+      <FileMessagesDialog
+        open={isMessageDialogOpen}
+        onOpenChange={setIsMessageDialogOpen}
+        file={messageFile}
+        facultyId={messageFile?.facultyId || courseFiles[0]?.facultyId}
+      />
     </div>
   );
 }

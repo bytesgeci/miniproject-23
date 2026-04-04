@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "../../ui/card";
 import { Button } from "../../ui/button";
 import { Badge } from "../../ui/badge";
 import { Textarea } from "../../ui/textarea";
-import { ArrowLeft, Download } from "lucide-react";
+import { ArrowLeft, Download, Send } from "lucide-react";
 import { toast } from "sonner";
 import { ChecklistSidebar } from "./ChecklistSidebar";
 import { ChecklistItem } from "./types";
@@ -14,6 +14,7 @@ import {
   CourseFile,
 } from "../FacultyAuditPortfolio/types";
 import { useAuth } from "@/context/AuthContext";
+import { sendMessagesBatch } from "@/lib/messageClient";
 
 // ── Checklists (mirrored from AuditReviewInterface/index.tsx) ──────────────
 
@@ -253,6 +254,53 @@ export function CourseReviewInterface({
     }
   };
 
+  const handleSendRemarks = async () => {
+    const text = auditorRemarks.trim();
+    if (!text) {
+      toast.error("Please provide remarks before sending");
+      return;
+    }
+    if (!facultyId) {
+      toast.error("Faculty ID is missing. Unable to send remarks.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const result = await sendMessagesBatch(
+        sortedFiles.map((file) => ({
+          facultyId,
+          auditorId: user?.id,
+          entityType: "course-file",
+          entityId: file.id,
+          threadId: `course-file:${file.id}`,
+          senderRole: "auditor",
+          senderName: user?.name,
+          message: text,
+          status: "pending",
+        })),
+      );
+
+      if (result.failed > 0) {
+        toast.error(
+          `Sent ${result.sent}/${sortedFiles.length} messages. ${result.errors[0] || "Some messages failed."}`,
+        );
+        return;
+      }
+
+      setAuditorRemarks("");
+      toast.success(`Remarks sent to ${result.sent} file thread(s)`);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("dashboard:data-updated"));
+      }
+    } catch (error) {
+      console.error("Send remarks error:", error);
+      toast.error("Failed to send remarks");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleSubmitReview = async () => {
     const allChecked = checklist.every((ci) => {
       const status = checkedItems[ci.id];
@@ -330,26 +378,31 @@ export function CourseReviewInterface({
         }
       }
 
-      // One combined message to faculty about the whole course
+      // Post a message on each file thread so faculty can see it in file-level dialogs.
       if (facultyId && sortedFiles.length > 0) {
-        const firstFileId = sortedFiles[0].id;
-        await fetch("/api/messages", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
+        const completionMessage =
+          auditorRemarks.trim() ||
+          `Course ${group.courseCode} (${group.academicYear}) review completed.`;
+
+        const messageResult = await sendMessagesBatch(
+          sortedFiles.map((file) => ({
             facultyId,
             auditorId: user?.id,
             entityType: "course-file",
-            entityId: firstFileId,
-            threadId: `course-review:${group.courseCode}:${group.academicYear}`,
+            entityId: file.id,
+            threadId: `course-file:${file.id}`,
             senderRole: "auditor",
             senderName: user?.name,
-            message:
-              auditorRemarks.trim() ||
-              `Course ${group.courseCode} (${group.academicYear}) review completed.`,
+            message: completionMessage,
             status: "completed",
-          }),
-        });
+          })),
+        );
+
+        if (messageResult.failed > 0) {
+          toast.error(
+            `Review saved, but ${messageResult.failed} notification message(s) failed to send.`,
+          );
+        }
       }
 
       onReviewCompleted?.(updatedFiles);
@@ -516,12 +569,24 @@ export function CourseReviewInterface({
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <Textarea
-                placeholder="Provide detailed feedback and remarks for this review (optional)..."
-                value={auditorRemarks}
-                onChange={(e) => setAuditorRemarks(e.target.value)}
-                rows={6}
-              />
+              <div className="space-y-2">
+                <Textarea
+                  placeholder="Provide detailed feedback and remarks for this review (optional)..."
+                  value={auditorRemarks}
+                  onChange={(e) => setAuditorRemarks(e.target.value)}
+                  rows={6}
+                />
+                <Button
+                  variant="default"
+                  size="default"
+                  onClick={handleSendRemarks}
+                  className="w-full"
+                  disabled={isSubmitting}
+                >
+                  <Send className="h-4 w-4 mr-2" />
+                  Send Remarks To Faculty
+                </Button>
+              </div>
               <Button
                 variant="secondary"
                 onClick={handleSaveDraft}

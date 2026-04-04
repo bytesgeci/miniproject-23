@@ -329,6 +329,7 @@ export function FacultyPortfolio({ faculty, onBack }: FacultyPortfolioProps) {
         </Card>
       )}
       <PortfolioTabs
+        facultyId={faculty.id}
         courseFiles={courseFiles}
         eventReports={eventReports}
         courseFilesPage={courseFilesPage}
@@ -350,6 +351,7 @@ export function FacultyPortfolio({ faculty, onBack }: FacultyPortfolioProps) {
         onOpenChange={setIsFileViewOpen}
         file={selectedFile}
         getStatusColor={getStatusColor}
+        facultyId={faculty.id}
       />
 
       <ReportViewDialog
@@ -357,6 +359,7 @@ export function FacultyPortfolio({ faculty, onBack }: FacultyPortfolioProps) {
         onOpenChange={setIsReportViewOpen}
         report={selectedReport}
         getStatusColor={getStatusColor}
+        facultyId={faculty.id}
       />
     </div>
   );

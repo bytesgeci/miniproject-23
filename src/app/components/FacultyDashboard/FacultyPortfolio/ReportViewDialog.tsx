@@ -7,13 +7,17 @@ import {
 } from "../../ui/dialog";
 import { Badge } from "../../ui/badge";
 import { Alert, AlertDescription } from "../../ui/alert";
+import { Card, CardContent, CardHeader, CardTitle } from "../../ui/card";
+import { MessageCircle } from "lucide-react";
 import { EventReport } from "./types";
+import { EntityMessagesPanel } from "../../shared/messages/EntityMessagesPanel";
 
 interface ReportViewDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   report: EventReport | null;
   getStatusColor: (status: string) => string;
+  facultyId?: string;
 }
 
 export function ReportViewDialog({
@@ -21,6 +25,7 @@ export function ReportViewDialog({
   onOpenChange,
   report,
   getStatusColor,
+  facultyId,
 }: ReportViewDialogProps) {
   const galleryImageUrls =
     report?.galleryImages?.filter(
@@ -101,6 +106,42 @@ export function ReportViewDialog({
                 details but cannot make changes.
               </AlertDescription>
             </Alert>
+
+            {/* Auditor Remarks */}
+            {report.auditorRemarks && (
+              <Card className="bg-amber-50 border-amber-200">
+                <CardHeader>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <MessageCircle className="h-4 w-4" />
+                    Auditor Remarks
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-amber-900">
+                    {report.auditorRemarks}
+                  </p>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Messages & Discussion */}
+            {report && facultyId && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">
+                    Discussion with Auditor
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <EntityMessagesPanel
+                    facultyId={facultyId}
+                    entityType="event-report"
+                    entityId={report.id}
+                    itemType="report"
+                  />
+                </CardContent>
+              </Card>
+            )}
           </div>
         )}
       </DialogContent>

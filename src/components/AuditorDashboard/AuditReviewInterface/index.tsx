@@ -21,6 +21,7 @@ import {
   downloadTextFile,
   sanitizeFileName,
 } from "@/lib/download";
+import { sendMessage } from "@/lib/messageClient";
 
 const theoryCourseFileChecklist: ChecklistItem[] = [
   { id: "co_po_mapping", label: "CO–PO Mapping (CO–PO Mapping Level)" },
@@ -241,6 +242,59 @@ export function AuditReviewInterface({
     }
   };
 
+  const handleSendRemarks = async () => {
+    if (!auditorRemarks.trim()) {
+      toast.error("Please provide remarks before sending");
+      return;
+    }
+
+    try {
+      const entityType = type === "file" ? "course-file" : "event-report";
+      const threadId = `${entityType}:${item.id}`;
+
+      if (facultyId) {
+        await sendMessage({
+          facultyId,
+          auditorId: user?.id,
+          entityType,
+          entityId: item.id,
+          threadId,
+          senderRole: "auditor",
+          senderName: user?.name,
+          message: auditorRemarks,
+          status: "pending",
+        });
+      }
+
+      const remarksResponse = await fetch("/api/remarks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          authorId: user?.id,
+          entityType,
+          entityId: item.id,
+          status: "published",
+          text: auditorRemarks,
+        }),
+      });
+
+      if (!remarksResponse.ok) {
+        const errorData = await remarksResponse.json().catch(() => ({}));
+        toast.error(errorData.error || "Failed to save remarks");
+        return;
+      }
+
+      setAuditorRemarks("");
+      toast.success("Remarks sent successfully");
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("dashboard:data-updated"));
+      }
+    } catch (error) {
+      console.error("Send remarks error:", error);
+      toast.error("Failed to send remarks");
+    }
+  };
+
   const handleDownloadSheet = () => {
     // Create CSV content
     let csvContent = "Checklist Item,Status\n";
@@ -368,6 +422,7 @@ export function AuditReviewInterface({
             item={item}
             auditorRemarks={auditorRemarks}
             onRemarksChange={setAuditorRemarks}
+            onSendRemarks={handleSendRemarks}
             reviewDecision={reviewDecision}
             onDecisionChange={setReviewDecision}
             onSubmit={handleSubmitReview}

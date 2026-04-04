@@ -8,14 +8,17 @@ import {
 import { Badge } from "../../ui/badge";
 import { Button } from "../../ui/button";
 import { Alert, AlertDescription } from "../../ui/alert";
-import { Download } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "../../ui/card";
+import { Download, MessageCircle } from "lucide-react";
 import { CourseFile } from "./types";
+import { EntityMessagesPanel } from "../../shared/messages/EntityMessagesPanel";
 
 interface FileViewDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   file: CourseFile | null;
   getStatusColor: (status: string) => string;
+  facultyId?: string;
 }
 
 export function FileViewDialog({
@@ -23,6 +26,7 @@ export function FileViewDialog({
   onOpenChange,
   file,
   getStatusColor,
+  facultyId,
 }: FileViewDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -73,6 +77,42 @@ export function FileViewDialog({
                 details but cannot make changes.
               </AlertDescription>
             </Alert>
+
+            {/* Auditor Remarks */}
+            {file.auditorRemarks && (
+              <Card className="bg-amber-50 border-amber-200">
+                <CardHeader>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <MessageCircle className="h-4 w-4" />
+                    Auditor Remarks
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-amber-900">
+                    {file.auditorRemarks}
+                  </p>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Messages & Discussion */}
+            {file && facultyId && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">
+                    Discussion with Auditor
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <EntityMessagesPanel
+                    facultyId={facultyId}
+                    entityType="course-file"
+                    entityId={file.id}
+                    itemType="file"
+                  />
+                </CardContent>
+              </Card>
+            )}
 
             <Button variant="outline" className="w-full">
               <Download className="h-4 w-4 mr-2" />
