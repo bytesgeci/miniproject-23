@@ -86,6 +86,27 @@ function buildAdvisorQuery(advisorId) {
   };
 }
 
+async function loadLegacyCourseFiles() {
+  const db = mongoose.connection?.db;
+  if (!db) {
+    return [];
+  }
+
+  try {
+    return await db
+      .collection("coursefiles")
+      .find({})
+      .project({ facultyId: 1, status: 1 })
+      .toArray();
+  } catch (error) {
+    console.warn(
+      "Unable to read legacy coursefiles collection:",
+      error.message,
+    );
+    return [];
+  }
+}
+
 /**
  * GET /api/dashboard/faculty-list
  * Get all faculty users for dashboard
@@ -256,9 +277,12 @@ router.get("/all-files", async (req, res) => {
  */
 router.get("/engagements", async (req, res) => {
   try {
-    const files = await UploadedFile.find({})
-      .select("facultyId review.status status uploadedAt")
-      .lean();
+    const [files, legacyCourseFiles] = await Promise.all([
+      UploadedFile.find({})
+        .select("facultyId review.status status uploadedAt")
+        .lean(),
+      loadLegacyCourseFiles(),
+    ]);
 
     // Keep per-faculty aggregates only for faculty who uploaded at least one file.
     const uploadsByFacultyId = new Map();
@@ -272,6 +296,23 @@ router.get("/engagements", async (req, res) => {
         (uploadsByFacultyId.get(facultyId) || 0) + 1,
       );
       if (getFileStatus(file) === "approved") {
+        approvedByFacultyId.set(
+          facultyId,
+          (approvedByFacultyId.get(facultyId) || 0) + 1,
+        );
+      }
+    }
+
+    for (const file of legacyCourseFiles) {
+      const facultyId = file?.facultyId?.toString();
+      if (!facultyId) continue;
+
+      uploadsByFacultyId.set(
+        facultyId,
+        (uploadsByFacultyId.get(facultyId) || 0) + 1,
+      );
+
+      if (normalizeStatusValue(file?.status) === "approved") {
         approvedByFacultyId.set(
           facultyId,
           (approvedByFacultyId.get(facultyId) || 0) + 1,
@@ -325,18 +366,38 @@ router.get("/pending-audit-faculty", async (req, res) => {
   try {
     const pendingQuery = buildStatusOrQuery(LEGACY_PENDING_STATUSES);
 
-    const [pendingFiles, pendingReports] = await Promise.all([
-      UploadedFile.find(pendingQuery).select("facultyId").lean(),
-      EventReport.find({ ...pendingQuery, deletedAt: null })
-        .select("facultyId")
-        .lean(),
-    ]);
+    const [pendingFiles, pendingReports, legacyCourseFiles] = await Promise.all(
+      [
+        UploadedFile.find(pendingQuery).select("facultyId").lean(),
+        EventReport.find({ ...pendingQuery, deletedAt: null })
+          .select("facultyId")
+          .lean(),
+        loadLegacyCourseFiles(),
+      ],
+    );
 
     const pendingByFaculty = new Map();
 
     for (const file of pendingFiles) {
       const facultyId = file?.facultyId?.toString();
       if (!facultyId) continue;
+
+      const current = pendingByFaculty.get(facultyId) || {
+        pendingFiles: 0,
+        pendingReports: 0,
+      };
+      current.pendingFiles += 1;
+      pendingByFaculty.set(facultyId, current);
+    }
+
+    for (const file of legacyCourseFiles) {
+      const facultyId = file?.facultyId?.toString();
+      if (!facultyId) continue;
+
+      const normalizedStatus = normalizeStatusValue(file?.status);
+      if (!LEGACY_PENDING_STATUSES.includes(normalizedStatus)) {
+        continue;
+      }
 
       const current = pendingByFaculty.get(facultyId) || {
         pendingFiles: 0,
