@@ -46,6 +46,7 @@ export interface CourseFile {
   size?: string;
   status?: "Pending" | "Approved" | "Rejected" | "Draft" | "Submitted";
   adminRemarks?: string;
+  auditorRemarks?: string;
   reviewedBy?: string;
   reviewedDate?: string;
   facultyResponse?: string;
@@ -73,6 +74,7 @@ export interface EventReport {
   outcomes: string;
   thumbnailUrl?: string;
   galleryImages?: string[];
+  auditorRemarks?: string;
   status: "Draft" | "Submitted" | "Approved" | "Rejected";
 }
 

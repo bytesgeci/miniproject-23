@@ -47,6 +47,14 @@ interface EngagementRecord {
   [key: string]: any;
 }
 
+interface MessageRecord {
+  id: string;
+  facultyId: string;
+  auditorId?: string;
+  entityType?: string;
+  entityId?: string;
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -246,15 +254,34 @@ export async function DELETE(
 ) {
   try {
     const { id } = await params;
-    const courseFiles =
-      await readJsonFile<CourseFileRecord[]>("courseFiles.json");
-    const eventReports =
-      await readJsonFile<EventReportRecord[]>("eventReports.json");
-    const audits = await readJsonFile<AuditRecord[]>("audits.json");
-    const remarks = await readJsonFile<RemarkRecord[]>("remarks.json");
-    const students = await readJsonFile<Student[]>("students.json");
+    const existingUser = await findUserById(id);
+    if (!existingUser) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
+    // Delete user first so core admin action succeeds even if legacy cleanup fails.
+    await deleteUserById(id);
+
+    const courseFiles = await readJsonFile<CourseFileRecord[]>(
+      "courseFiles.json",
+    ).catch(() => []);
+    const eventReports = await readJsonFile<EventReportRecord[]>(
+      "eventReports.json",
+    ).catch(() => []);
+    const audits = await readJsonFile<AuditRecord[]>("audits.json").catch(
+      () => [],
+    );
+    const remarks = await readJsonFile<RemarkRecord[]>("remarks.json").catch(
+      () => [],
+    );
+    const students = await readJsonFile<Student[]>("students.json").catch(
+      () => [],
+    );
     const engagements = await readJsonFile<EngagementRecord[]>(
       "engagements.json",
+    ).catch(() => []);
+    const messages = await readJsonFile<MessageRecord[]>(
+      "auditorMessages.json",
     ).catch(() => []);
 
     const removedFileIds = courseFiles
@@ -299,13 +326,20 @@ export async function DELETE(
       (engagement) => engagement.facultyId !== id,
     );
 
-    await deleteUserById(id);
-    await writeJsonFile("courseFiles.json", updatedFiles);
-    await writeJsonFile("eventReports.json", updatedReports);
-    await writeJsonFile("audits.json", updatedAudits);
-    await writeJsonFile("remarks.json", updatedRemarks);
-    await writeJsonFile("students.json", updatedStudents);
-    await writeJsonFile("engagements.json", updatedEngagements);
+    const updatedMessages = messages.filter(
+      (message) => message.facultyId !== id && message.auditorId !== id,
+    );
+
+    // Best-effort legacy JSON cleanup. Ignore write failures in serverless environments.
+    await Promise.allSettled([
+      writeJsonFile("courseFiles.json", updatedFiles),
+      writeJsonFile("eventReports.json", updatedReports),
+      writeJsonFile("audits.json", updatedAudits),
+      writeJsonFile("remarks.json", updatedRemarks),
+      writeJsonFile("students.json", updatedStudents),
+      writeJsonFile("engagements.json", updatedEngagements),
+      writeJsonFile("auditorMessages.json", updatedMessages),
+    ]);
 
     const users = await getAllUsers();
     return NextResponse.json({ users });
