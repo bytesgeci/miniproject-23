@@ -16,6 +16,7 @@ import type {
 } from "@/components/StaffAdvisorDashboard/types";
 import { getAllUsers } from "@/lib/userStore";
 import { normalizeRoleInput } from "@/lib/adminConfig";
+import { readJsonFile } from "@/lib/jsonDb";
 
 // Helper to serialize objects with MongoDB ObjectIds for client components
 function serializeId(id: unknown): string {
@@ -79,6 +80,16 @@ interface PendingAuditFacultyResponse {
   totalFaculty?: number;
 }
 
+interface LocalCourseFileRecord {
+  facultyId?: string;
+  status?: string;
+}
+
+interface LocalEventReportRecord {
+  facultyId?: string;
+  status?: string;
+}
+
 interface StudentsResponse {
   students: Student[];
 }
@@ -104,6 +115,60 @@ function cloneFacultyDashboardData(
       courses: Array.isArray(member.courses) ? [...member.courses] : [],
     })),
   };
+}
+
+function normalizeAuditStatus(value?: string | null) {
+  return String(value || "")
+    .trim()
+    .toLowerCase();
+}
+
+async function buildPendingMapFromLocalData() {
+  const [courseFiles, eventReports] = await Promise.all([
+    readJsonFile<LocalCourseFileRecord[]>("courseFiles.json"),
+    readJsonFile<LocalEventReportRecord[]>("eventReports.json"),
+  ]);
+
+  const pendingByFacultyId = new Map<
+    string,
+    { pendingFiles: number; pendingReports: number }
+  >();
+
+  for (const file of courseFiles || []) {
+    const facultyId = String(file?.facultyId || "").trim();
+    if (!facultyId) continue;
+
+    const status = normalizeAuditStatus(file?.status);
+    if (!["pending", "submitted", "in_review", "in review"].includes(status)) {
+      continue;
+    }
+
+    const current = pendingByFacultyId.get(facultyId) || {
+      pendingFiles: 0,
+      pendingReports: 0,
+    };
+    current.pendingFiles += 1;
+    pendingByFacultyId.set(facultyId, current);
+  }
+
+  for (const report of eventReports || []) {
+    const facultyId = String(report?.facultyId || "").trim();
+    if (!facultyId) continue;
+
+    const status = normalizeAuditStatus(report?.status);
+    if (!["pending", "submitted", "in_review", "in review"].includes(status)) {
+      continue;
+    }
+
+    const current = pendingByFacultyId.get(facultyId) || {
+      pendingFiles: 0,
+      pendingReports: 0,
+    };
+    current.pendingReports += 1;
+    pendingByFacultyId.set(facultyId, current);
+  }
+
+  return pendingByFacultyId;
 }
 
 /**
@@ -344,9 +409,15 @@ export async function getAuditorDashboardData(): Promise<{
   facultyMembers: AuditorFacultyMember[];
 }> {
   try {
-    // Fetch engagement summaries from MongoDB.
-    const engagements =
-      await fetchFromDashboardAPI<EngagementsResponse>("/engagements");
+    let engagements: EngagementsResponse = { engagements: [] };
+    try {
+      engagements =
+        await fetchFromDashboardAPI<EngagementsResponse>("/engagements");
+    } catch (error) {
+      console.warn("Engagement fetch failed; proceeding with local fallbacks", {
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
 
     const stats: AuditorStats = {
       totalFiles: 0,
@@ -449,12 +520,17 @@ export async function getAuditorDashboardData(): Promise<{
 
     // Enforce auditor visibility rule: only show faculty with pending audits.
     try {
+      let pendingByFacultyId = new Map<
+        string,
+        { pendingFiles: number; pendingReports: number; totalPending: number }
+      >();
+
       const pendingAuditData =
         await fetchFromDashboardAPI<PendingAuditFacultyResponse>(
           "/pending-audit-faculty",
         );
 
-      const pendingByFacultyId = new Map(
+      pendingByFacultyId = new Map(
         (pendingAuditData.pendingFaculty || []).map((row) => [
           String(row.facultyId || ""),
           {
@@ -464,6 +540,20 @@ export async function getAuditorDashboardData(): Promise<{
           },
         ]),
       );
+
+      if (pendingByFacultyId.size === 0) {
+        const localPending = await buildPendingMapFromLocalData();
+        pendingByFacultyId = new Map(
+          [...localPending.entries()].map(([facultyId, counts]) => [
+            facultyId,
+            {
+              pendingFiles: counts.pendingFiles,
+              pendingReports: counts.pendingReports,
+              totalPending: counts.pendingFiles + counts.pendingReports,
+            },
+          ]),
+        );
+      }
 
       facultyMembers = facultyMembers
         .map((member) => {
@@ -494,6 +584,40 @@ export async function getAuditorDashboardData(): Promise<{
           message: error instanceof Error ? error.message : String(error),
         },
       );
+
+      try {
+        const localPending = await buildPendingMapFromLocalData();
+        facultyMembers = facultyMembers
+          .map((member) => {
+            const pending = localPending.get(String(member.id || ""));
+            return {
+              ...member,
+              pendingFiles: pending?.pendingFiles ?? 0,
+              pendingReports: pending?.pendingReports ?? 0,
+            };
+          })
+          .filter(
+            (member) =>
+              (member.pendingFiles || 0) > 0 ||
+              (member.pendingReports || 0) > 0,
+          );
+
+        stats.pendingFiles = facultyMembers.reduce(
+          (sum, member) => sum + (member.pendingFiles || 0),
+          0,
+        );
+        stats.pendingReports = facultyMembers.reduce(
+          (sum, member) => sum + (member.pendingReports || 0),
+          0,
+        );
+      } catch (localError) {
+        console.warn("Local pending fallback failed", {
+          message:
+            localError instanceof Error
+              ? localError.message
+              : String(localError),
+        });
+      }
     }
 
     stats.totalFaculty = facultyMembers.length;
