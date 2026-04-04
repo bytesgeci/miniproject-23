@@ -147,6 +147,10 @@ function AppHeaderComponent({ userRole }: AppHeaderProps) {
 
       switchRole(role);
       safelyNavigate(() => router.replace(targetPath));
+      // Ensure App Router fetches fresh data after cookie/state updates.
+      window.setTimeout(() => {
+        safelyNavigate(() => router.refresh());
+      }, 60);
 
       if (switchTimeoutRef.current !== null) {
         window.clearTimeout(switchTimeoutRef.current);
@@ -182,14 +186,6 @@ function AppHeaderComponent({ userRole }: AppHeaderProps) {
       }
     };
   }, []);
-
-  useEffect(() => {
-    assignedRoles.forEach((role) => {
-      if (role !== userRole) {
-        void router.prefetch(getDashboardPath(role));
-      }
-    });
-  }, [assignedRoles, userRole, router]);
 
   const loadMessageNotifications = useCallback(async () => {
     if (!showMessageNotifications) {
