@@ -2,7 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "../../ui/card";
 import { Badge } from "../../ui/badge";
 import { Textarea } from "../../ui/textarea";
 import { Button } from "../../ui/button";
-import { CheckCircle, XCircle } from "lucide-react";
+import { CheckCircle, XCircle, Send } from "lucide-react";
 import { toast } from "sonner";
 import { CourseFile, EventReport } from "./types";
 
@@ -34,7 +34,7 @@ export function AuditorRemarks({
       return;
     }
 
-    const allChecked = checklist.every(item => checkedItems[item.id]);
+    const allChecked = checklist.every((item) => checkedItems[item.id]);
     if (!allChecked) {
       toast.error("Please complete all checklist items");
       return;
@@ -54,12 +54,29 @@ export function AuditorRemarks({
         <CardTitle>Auditor Remarks</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        <Textarea
-          placeholder="Provide detailed feedback and remarks..."
-          value={auditorRemarks}
-          onChange={(e) => onRemarksChange(e.target.value)}
-          rows={6}
-        />
+        <div className="space-y-2">
+          <Textarea
+            placeholder="Provide detailed feedback and remarks..."
+            value={auditorRemarks}
+            onChange={(e) => onRemarksChange(e.target.value)}
+            rows={6}
+          />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              if (!auditorRemarks.trim()) {
+                toast.error("Please provide remarks before sending");
+                return;
+              }
+              toast.success("Remarks saved successfully");
+            }}
+            className="w-full sm:w-auto"
+          >
+            <Send className="h-4 w-4 mr-2" />
+            Send Remarks
+          </Button>
+        </div>
 
         {/* Decision Buttons */}
         <div className="flex gap-4">
