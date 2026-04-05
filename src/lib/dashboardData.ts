@@ -36,12 +36,7 @@ function normalizeIdentity(value?: string | null) {
 
 interface DashboardFacultyMember extends FacultyMember {}
 
-const FACULTY_DASHBOARD_CACHE_TTL_MS = 20000;
 const STAFF_ADVISOR_DASHBOARD_CACHE_TTL_MS = 30000;
-const facultyDashboardCache = new Map<
-  string,
-  { expiresAt: number; data: FacultyDashboardData }
->();
 const staffAdvisorDashboardCache = new Map<
   string,
   { expiresAt: number; data: StaffAdvisorDashboardData }
@@ -83,11 +78,19 @@ interface PendingAuditFacultyResponse {
 interface LocalCourseFileRecord {
   facultyId?: string;
   status?: string;
+  fileName?: string;
+  courseCode?: string;
+  uploadDate?: string;
+  createdAt?: string;
 }
 
 interface LocalEventReportRecord {
   facultyId?: string;
   status?: string;
+  participants?: number;
+  eventName?: string;
+  createdAt?: string;
+  submittedDate?: string;
 }
 
 interface StudentsResponse {
@@ -121,6 +124,145 @@ function normalizeAuditStatus(value?: string | null) {
   return String(value || "")
     .trim()
     .toLowerCase();
+}
+
+function formatTimeAgo(timestamp?: string | null) {
+  if (!timestamp) return "Just now";
+
+  const time = new Date(timestamp).getTime();
+  if (Number.isNaN(time)) return "Just now";
+
+  const diffMs = Date.now() - time;
+  if (diffMs < 60_000) return "Just now";
+
+  const diffMinutes = Math.floor(diffMs / 60_000);
+  if (diffMinutes < 60) {
+    return `${diffMinutes}m ago`;
+  }
+
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 24) {
+    return `${diffHours}h ago`;
+  }
+
+  const diffDays = Math.floor(diffHours / 24);
+  return `${diffDays}d ago`;
+}
+
+async function buildLocalFacultyCourseFileStats(facultyId: string) {
+  const files = await readJsonFile<LocalCourseFileRecord[]>("courseFiles.json");
+  const facultyFiles = (files || []).filter(
+    (file) => String(file?.facultyId || "").trim() === facultyId,
+  );
+
+  const pendingFiles = facultyFiles.filter((file) => {
+    const status = normalizeAuditStatus(file?.status);
+    return ["pending", "submitted", "in_review", "in review"].includes(status);
+  }).length;
+
+  const recentActivity = facultyFiles
+    .slice()
+    .sort((a, b) => {
+      const aTime = new Date(a.uploadDate || a.createdAt || 0).getTime();
+      const bTime = new Date(b.uploadDate || b.createdAt || 0).getTime();
+      return bTime - aTime;
+    })
+    .slice(0, 5)
+    .map((file) => ({
+      action: "Uploaded",
+      item: file.fileName || file.courseCode || "Course File",
+      time: formatTimeAgo(file.uploadDate || file.createdAt),
+    }));
+
+  return {
+    totalFiles: facultyFiles.length,
+    pendingFiles,
+    recentActivity,
+  };
+}
+
+async function buildLocalFacultyDashboardData(
+  username?: string | null,
+): Promise<FacultyDashboardData> {
+  const normalizedUsername = normalizeIdentity(username);
+  const users = await getAllUsers();
+  const facultyMembers = users
+    .filter((user) => {
+      const primaryRole = normalizeRoleInput(user.role);
+      const normalizedRoles = Array.isArray(user.roles)
+        ? (user.roles
+            .map((role) => normalizeRoleInput(role))
+            .filter(Boolean) as string[])
+        : [];
+
+      return primaryRole === "faculty" || normalizedRoles.includes("faculty");
+    })
+    .map((user) => {
+      const normalizedRoles = Array.isArray(user.roles)
+        ? (user.roles
+            .map((role) => normalizeRoleInput(role))
+            .filter(Boolean) as string[])
+        : [];
+
+      return {
+        id: serializeId(user.id),
+        username: String(user.username || ""),
+        name: String(user.name || user.username || "Faculty"),
+        department: String(user.department || ""),
+        role: String(user.role || "faculty"),
+        roles: normalizedRoles,
+        isStaffAdvisor: normalizedRoles.includes("staff-advisor"),
+        email: String(user.email || user.username || ""),
+        phone: String(user.phone || ""),
+        courses: [],
+        specialization: "",
+        experience: "",
+        profileImageUrl: "",
+        resumeUrl: "",
+        resumeFileName: "",
+      };
+    });
+
+  const stats: DashboardStats = {
+    totalFiles: 0,
+    totalReports: 0,
+    pendingReports: 0,
+    totalParticipants: 0,
+    recentActivity: [],
+  };
+
+  const selectedUser = facultyMembers.find((member) => {
+    const normalizedUsernameField = normalizeIdentity(member.username);
+    const normalizedName = normalizeIdentity(member.name);
+    const normalizedEmail = normalizeIdentity(member.email);
+    return (
+      normalizedUsernameField === normalizedUsername ||
+      normalizedName === normalizedUsername ||
+      normalizedEmail === normalizedUsername
+    );
+  });
+
+  if (selectedUser) {
+    const [localCourseStats, eventReports] = await Promise.all([
+      buildLocalFacultyCourseFileStats(selectedUser.id),
+      readJsonFile<LocalEventReportRecord[]>("eventReports.json"),
+    ]);
+
+    const facultyReports = (eventReports || []).filter(
+      (report) => String(report?.facultyId || "").trim() === selectedUser.id,
+    );
+
+    stats.totalFiles = localCourseStats.totalFiles;
+    stats.totalReports = facultyReports.length;
+    stats.pendingReports = localCourseStats.pendingFiles;
+    stats.totalParticipants = facultyReports.reduce(
+      (sum, report) => sum + (Number(report.participants) || 0),
+      0,
+    );
+    stats.recentActivity = localCourseStats.recentActivity;
+  }
+
+  return { stats, facultyMembers };
 }
 
 async function buildPendingMapFromLocalData() {
@@ -226,6 +368,7 @@ async function fetchFromDashboardAPI<T>(endpoint: string): Promise<T> {
           "Content-Type": "application/json",
         },
         credentials: "include",
+        cache: "no-store",
       });
 
       if (response.ok) {
@@ -261,13 +404,32 @@ async function fetchFromDashboardAPI<T>(endpoint: string): Promise<T> {
 export async function getFacultyDashboardData(
   username?: string | null,
 ): Promise<FacultyDashboardData> {
-  const normalizedUsername = normalizeIdentity(username);
-  const cacheKey = normalizedUsername || "__anonymous__";
-  const cachedEntry = facultyDashboardCache.get(cacheKey);
+  const normalizeBaseUrl = (value: string | undefined) => {
+    const normalized = String(value || "")
+      .trim()
+      .replace(/\/$/, "");
 
-  if (cachedEntry && cachedEntry.expiresAt > Date.now()) {
-    return cloneFacultyDashboardData(cachedEntry.data);
+    if (!normalized) return "";
+    if (/replace-with-backend-url/i.test(normalized)) {
+      return "";
+    }
+    if (!/^https?:\/\//i.test(normalized)) {
+      return "";
+    }
+
+    return normalized;
+  };
+
+  const backendUrlCandidates = [
+    normalizeBaseUrl(process.env.NEXT_PUBLIC_BACKEND_URL),
+    normalizeBaseUrl(process.env.BACKEND_URL),
+  ].filter(Boolean);
+
+  if (backendUrlCandidates.length === 0) {
+    return buildLocalFacultyDashboardData(username);
   }
+
+  const normalizedUsername = normalizeIdentity(username);
 
   try {
     // Fetch dashboard data from MongoDB
@@ -286,9 +448,11 @@ export async function getFacultyDashboardData(
 
     if (username && facultyMembers.length > 0) {
       const selectedUser = facultyMembers.find((m) => {
+        const normalizedUsernameField = normalizeIdentity(m.username);
         const normalizedName = normalizeIdentity(m.name);
         const normalizedEmail = normalizeIdentity(m.email);
         return (
+          normalizedUsernameField === normalizedUsername ||
           normalizedName === normalizedUsername ||
           normalizedEmail === normalizedUsername
         );
@@ -305,85 +469,37 @@ export async function getFacultyDashboardData(
             message: error instanceof Error ? error.message : String(error),
           });
         }
+
+        try {
+          const localCourseStats = await buildLocalFacultyCourseFileStats(
+            selectedUser.id,
+          );
+          stats.totalFiles = localCourseStats.totalFiles;
+          stats.pendingReports = localCourseStats.pendingFiles;
+          if (localCourseStats.recentActivity.length > 0) {
+            stats.recentActivity = localCourseStats.recentActivity;
+          }
+        } catch (error) {
+          console.warn("Local faculty course-file stats lookup failed", {
+            selectedUserId: selectedUser.id,
+            message: error instanceof Error ? error.message : String(error),
+          });
+        }
       }
     }
 
-    const data = {
+    return {
       stats,
       facultyMembers,
     };
-
-    facultyDashboardCache.set(cacheKey, {
-      data: cloneFacultyDashboardData(data),
-      expiresAt: Date.now() + FACULTY_DASHBOARD_CACHE_TTL_MS,
-    });
-
-    return data;
   } catch (error) {
     console.error(
       "Error fetching faculty dashboard data from backend API:",
       error,
     );
 
-    // Fallback for hosted environments where external BACKEND_URL may be missing
-    // or temporarily unavailable. Pull faculty users directly from userStore.
     try {
-      const users = await getAllUsers();
-      const facultyMembers: FacultyMember[] = users
-        .filter((user) => {
-          const primaryRole = normalizeRoleInput(user.role);
-          const normalizedRoles = Array.isArray(user.roles)
-            ? (user.roles
-                .map((role) => normalizeRoleInput(role))
-                .filter(Boolean) as string[])
-            : [];
-
-          return (
-            primaryRole === "faculty" || normalizedRoles.includes("faculty")
-          );
-        })
-        .map((user) => {
-          const normalizedRoles = Array.isArray(user.roles)
-            ? (user.roles
-                .map((role) => normalizeRoleInput(role))
-                .filter(Boolean) as string[])
-            : [];
-
-          return {
-            id: serializeId(user.id),
-            name: String(user.name || user.username || "Faculty"),
-            department: String(user.department || ""),
-            role: String(user.role || "faculty"),
-            roles: normalizedRoles,
-            isStaffAdvisor: normalizedRoles.includes("staff-advisor"),
-            email: String(user.email || user.username || ""),
-            phone: String(user.phone || ""),
-            courses: [],
-            specialization: "",
-            experience: "",
-            profileImageUrl: "",
-            resumeUrl: "",
-            resumeFileName: "",
-          };
-        });
-
-      const fallbackData = {
-        stats: {
-          totalFiles: 0,
-          totalReports: 0,
-          pendingReports: 0,
-          totalParticipants: 0,
-          recentActivity: [],
-        },
-        facultyMembers,
-      };
-
-      facultyDashboardCache.set(cacheKey, {
-        data: cloneFacultyDashboardData(fallbackData),
-        expiresAt: Date.now() + FACULTY_DASHBOARD_CACHE_TTL_MS,
-      });
-
-      return fallbackData;
+      return await buildLocalFacultyDashboardData(username);
     } catch (fallbackError) {
       console.error(
         "Fallback faculty dashboard data load failed:",
@@ -799,6 +915,5 @@ export async function getStaffAdvisorDashboardData(
 }
 
 export function clearDashboardCache() {
-  facultyDashboardCache.clear();
   staffAdvisorDashboardCache.clear();
 }

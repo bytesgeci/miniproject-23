@@ -145,6 +145,7 @@ router.get("/faculty-list", async (req, res) => {
     // Format faculty members
     const facultyMembers = faculty.map((user) => ({
       id: user._id.toString(),
+      username: user.username || "",
       name: user.name,
       department: user.department || "",
       role: user.role,
