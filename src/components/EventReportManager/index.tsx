@@ -66,6 +66,15 @@ interface AuditorMessage {
   createdAt?: string;
 }
 
+const DEFAULT_COMMUNITY_OPTIONS = [
+  "Community Outreach",
+  "Health Awareness",
+  "Education Support",
+  "Environmental Initiative",
+  "Skill Development",
+  "Other",
+];
+
 function normalizeCommunityOptions(values: Array<string | undefined | null>) {
   return Array.from(
     new Set(values.map((value) => String(value || "").trim()).filter(Boolean)),
@@ -114,6 +123,24 @@ export function EventReportManager({
   });
 
   const [galleryPreviews, setGalleryPreviews] = useState<string[]>([]);
+
+  const discoveredCommunityOptions = useMemo(
+    () =>
+      normalizeCommunityOptions([
+        ...communityOptions,
+        ...reports.map((report) => report.community),
+      ]),
+    [communityOptions, reports],
+  );
+
+  const createCommunityOptions = useMemo(
+    () =>
+      normalizeCommunityOptions([
+        ...DEFAULT_COMMUNITY_OPTIONS,
+        ...discoveredCommunityOptions,
+      ]),
+    [discoveredCommunityOptions],
+  );
 
   useEffect(() => {
     const fetchReports = async () => {
@@ -531,7 +558,7 @@ export function EventReportManager({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Communities</SelectItem>
-                {communityOptions.map((community) => (
+                {discoveredCommunityOptions.map((community) => (
                   <SelectItem key={community} value={community}>
                     {community}
                   </SelectItem>
@@ -635,7 +662,7 @@ export function EventReportManager({
                         <SelectValue placeholder="Select community type" />
                       </SelectTrigger>
                       <SelectContent>
-                        {communityOptions.filter(Boolean).map((community) => (
+                        {createCommunityOptions.map((community) => (
                           <SelectItem key={community} value={community}>
                             {community}
                           </SelectItem>
