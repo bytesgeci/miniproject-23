@@ -1,14 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
-import { getMongoDb } from "@/lib/mongoDb";
-import { COLLECTIONS, ensureNormalizedIndexes } from "@/lib/mongoNormalized";
+import { readJsonFile, writeJsonFile } from "@/lib/jsonDb";
 import type { EventReport } from "@/components/EventReportManager/types";
 import { getAllUsers } from "@/lib/userStore";
 import type { UserRecord } from "@/lib/userStore";
+import { recomputeEngagementForFaculty } from "@/lib/engagements";
 
 type EventReportWithFaculty = EventReport & {
   facultyName?: string;
   department?: string;
+  createdAt?: string;
+  updatedAt?: string;
 };
 
 function parsePositiveInt(value: string | null, fallback: number) {
@@ -72,14 +74,9 @@ function resolveUserByAnyIdentity(users: UserRecord[], value: unknown) {
 
 export async function POST(request: NextRequest) {
   try {
-    const db = await getMongoDb();
-    // Avoid blocking user-facing writes on index checks.
-    void ensureNormalizedIndexes(db).catch((error) => {
-      console.warn("Background index ensure failed for event-reports POST", {
-        message: error instanceof Error ? error.message : String(error),
-      });
-    });
     const payload = await request.json();
+    const reports =
+      await readJsonFile<EventReportWithFaculty[]>("eventReports.json");
     const users = await getAllUsers();
     const facultyUser = resolveUserByAnyIdentity(users, payload.facultyId);
     const canonicalFacultyId = String(
@@ -111,17 +108,19 @@ export async function POST(request: NextRequest) {
       updatedAt: timestamp,
     };
 
-    await db
-      .collection<
-        EventReport & { facultyName?: string }
-      >(COLLECTIONS.eventReports)
-      .insertOne(newReport);
+    const updatedReports = [newReport, ...(reports || [])];
+    await writeJsonFile("eventReports.json", updatedReports);
 
-    const updatedReports = (await db
-      .collection<EventReport>(COLLECTIONS.eventReports)
-      .find({})
-      .sort({ createdAt: -1 })
-      .toArray()) as EventReport[];
+    if (canonicalFacultyId) {
+      try {
+        await recomputeEngagementForFaculty(canonicalFacultyId);
+      } catch (error) {
+        console.warn("Failed to recompute engagement after report create", {
+          facultyId: canonicalFacultyId,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
 
     return NextResponse.json({ reports: updatedReports });
   } catch (error) {
@@ -135,16 +134,8 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
-    const db = await getMongoDb();
-    // Keep reads fast on cold starts; ensure indexes in background.
-    void ensureNormalizedIndexes(db).catch((error) => {
-      console.warn("Background index ensure failed for event-reports GET", {
-        message: error instanceof Error ? error.message : String(error),
-      });
-    });
-    const reportsCollection = db.collection<EventReport>(
-      COLLECTIONS.eventReports,
-    );
+    const reports =
+      await readJsonFile<EventReportWithFaculty[]>("eventReports.json");
 
     const searchParams = request.nextUrl.searchParams;
     const facultyId = String(searchParams.get("facultyId") || "").trim();
@@ -160,73 +151,135 @@ export async function GET(request: NextRequest) {
     const limit = parsePositiveInt(searchParams.get("limit"), 0);
     const offset = parsePositiveInt(searchParams.get("offset"), 0);
     const includeMeta = toBooleanFlag(searchParams.get("includeMeta"), true);
+    const includeFaculty = toBooleanFlag(
+      searchParams.get("includeFaculty"),
+      true,
+    );
 
     let users: UserRecord[] = [];
-    let requestedFacultyUser: UserRecord | null = null;
     const facultyIdentitySet = new Set<string>();
 
-    const query: Record<string, unknown> = {};
-    if (facultyId) {
-      // Fast path: exact facultyId match first; fallback to identity expansion only if needed.
-      query.facultyId = facultyId;
-    }
-    if (status) {
-      query.status = new RegExp(`^${status}$`, "i");
-    }
-    if (community) {
-      query.community = new RegExp(`^${community}$`, "i");
-    }
+    // Fast path: direct facultyId filtering first, like course-files route.
+    let filteredReports = (reports || []).filter((report) => {
+      if (facultyId && String(report.facultyId || "").trim() !== facultyId) {
+        return false;
+      }
+      if (
+        status &&
+        String(report.status || "")
+          .trim()
+          .toLowerCase() !== status
+      ) {
+        return false;
+      }
+      if (
+        community &&
+        String(report.community || "")
+          .trim()
+          .toLowerCase() !== community
+      ) {
+        return false;
+      }
+      if (!search) {
+        return true;
+      }
 
-    // Fast path for faculty dashboard loads (no search text): let MongoDB filter/paginate.
-    if (!search) {
-      let activeQuery = { ...query };
-      let total = await reportsCollection.countDocuments(activeQuery);
+      const haystack = [
+        report.eventName,
+        report.community,
+        report.description,
+        report.location,
+        report.facultyCoordinator,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
 
-      if (facultyId && total === 0) {
-        users = await getAllUsers();
-        requestedFacultyUser = resolveUserByAnyIdentity(users, facultyId);
+      return haystack.includes(search);
+    });
 
-        if (requestedFacultyUser) {
-          const identities = buildUserIdentitySet({
-            id: requestedFacultyUser.id,
-            username: requestedFacultyUser.username,
-            email: requestedFacultyUser.email,
-            firebaseUid: requestedFacultyUser.firebaseUid,
-          });
-          identities.forEach((identity) => facultyIdentitySet.add(identity));
-        } else {
-          const normalizedRequested = normalizeIdentity(facultyId);
-          if (normalizedRequested) {
-            facultyIdentitySet.add(normalizedRequested);
+    // Identity fallback only if a faculty filter was given and direct match is empty.
+    if (facultyId && filteredReports.length === 0) {
+      users = await getAllUsers();
+      const requestedFacultyUser = resolveUserByAnyIdentity(users, facultyId);
+
+      if (requestedFacultyUser) {
+        const identities = buildUserIdentitySet({
+          id: requestedFacultyUser.id,
+          username: requestedFacultyUser.username,
+          email: requestedFacultyUser.email,
+          firebaseUid: requestedFacultyUser.firebaseUid,
+        });
+        identities.forEach((identity) => facultyIdentitySet.add(identity));
+      } else {
+        const normalizedRequested = normalizeIdentity(facultyId);
+        if (normalizedRequested) {
+          facultyIdentitySet.add(normalizedRequested);
+        }
+      }
+
+      filteredReports = (reports || []).filter((report) => {
+        if (facultyIdentitySet.size > 0) {
+          const reportFacultyIdentity = normalizeIdentity(report.facultyId);
+          if (
+            !reportFacultyIdentity ||
+            !facultyIdentitySet.has(reportFacultyIdentity)
+          ) {
+            return false;
           }
         }
 
-        if (facultyIdentitySet.size > 0) {
-          activeQuery = {
-            ...activeQuery,
-            facultyId: { $in: Array.from(facultyIdentitySet) },
-          };
-          total = await reportsCollection.countDocuments(activeQuery);
+        if (
+          status &&
+          String(report.status || "")
+            .trim()
+            .toLowerCase() !== status
+        ) {
+          return false;
         }
-      }
+        if (
+          community &&
+          String(report.community || "")
+            .trim()
+            .toLowerCase() !== community
+        ) {
+          return false;
+        }
+        if (!search) {
+          return true;
+        }
 
-      let cursor = reportsCollection.find(activeQuery).sort({ createdAt: -1 });
-      if (offset > 0) {
-        cursor = cursor.skip(offset);
-      }
-      if (limit > 0) {
-        cursor = cursor.limit(limit);
-      }
+        const haystack = [
+          report.eventName,
+          report.community,
+          report.description,
+          report.location,
+          report.facultyCoordinator,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
 
-      const pagedReports = (await cursor.toArray()) as EventReportWithFaculty[];
+        return haystack.includes(search);
+      });
+    }
 
-      // Most records now store facultyName/department at write-time.
-      // Only enrich when fields are missing.
+    const sortedReports = filteredReports.slice().sort((a, b) => {
+      const aTime = new Date(a.createdAt || a.eventDate || 0).getTime();
+      const bTime = new Date(b.createdAt || b.eventDate || 0).getTime();
+      return bTime - aTime;
+    });
+
+    const pagedReports =
+      limit > 0
+        ? sortedReports.slice(offset, offset + limit)
+        : sortedReports.slice(offset);
+
+    let reportsWithFaculty = pagedReports;
+    if (includeFaculty) {
       const needsEnrichment = pagedReports.some(
         (report) => !report.facultyName || !report.department,
       );
-
-      let reportsWithFaculty = pagedReports as EventReportWithFaculty[];
 
       if (needsEnrichment) {
         if (users.length === 0) {
@@ -257,161 +310,34 @@ export async function GET(request: NextRequest) {
           };
         });
       }
-
-      if (!includeMeta) {
-        return NextResponse.json({
-          reports: reportsWithFaculty,
-          total,
-          offset,
-          limit,
-        });
-      }
-
-      const communities = (await reportsCollection.distinct("community"))
-        .filter((value): value is string => typeof value === "string")
-        .map((value) => value.trim())
-        .filter(Boolean)
-        .sort((a, b) => a.localeCompare(b));
-
-      return NextResponse.json({
-        reports: reportsWithFaculty,
-        communities,
-        total,
-        offset,
-        limit,
-      });
     }
-
-    let reportsQuery = { ...query };
-    let reports = (await reportsCollection
-      .find(reportsQuery)
-      .sort({ createdAt: -1 })
-      .toArray()) as EventReportWithFaculty[];
-
-    if (facultyId && reports.length === 0) {
-      users = await getAllUsers();
-      requestedFacultyUser = resolveUserByAnyIdentity(users, facultyId);
-
-      if (requestedFacultyUser) {
-        const identities = buildUserIdentitySet({
-          id: requestedFacultyUser.id,
-          username: requestedFacultyUser.username,
-          email: requestedFacultyUser.email,
-          firebaseUid: requestedFacultyUser.firebaseUid,
-        });
-        identities.forEach((identity) => facultyIdentitySet.add(identity));
-      } else {
-        const normalizedRequested = normalizeIdentity(facultyId);
-        if (normalizedRequested) {
-          facultyIdentitySet.add(normalizedRequested);
-        }
-      }
-
-      if (facultyIdentitySet.size > 0) {
-        reportsQuery = {
-          ...reportsQuery,
-          facultyId: { $in: Array.from(facultyIdentitySet) },
-        };
-        reports = (await reportsCollection
-          .find(reportsQuery)
-          .sort({ createdAt: -1 })
-          .toArray()) as EventReportWithFaculty[];
-      }
-    }
-
-    const filteredReports = reports.filter((report) => {
-      if (facultyIdentitySet.size > 0) {
-        const reportFacultyIdentity = normalizeIdentity(report.facultyId);
-        if (
-          !reportFacultyIdentity ||
-          !facultyIdentitySet.has(reportFacultyIdentity)
-        ) {
-          return false;
-        }
-      }
-
-      if (status && String(report.status || "").toLowerCase() !== status) {
-        return false;
-      }
-
-      if (
-        community &&
-        String(report.community || "")
-          .trim()
-          .toLowerCase() !== community
-      ) {
-        return false;
-      }
-
-      if (!search) {
-        return true;
-      }
-
-      const haystack = [
-        report.eventName,
-        report.community,
-        report.description,
-        report.location,
-        report.facultyCoordinator,
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-
-      return haystack.includes(search);
-    });
-
-    const pagedReports =
-      limit > 0
-        ? filteredReports.slice(offset, offset + limit)
-        : filteredReports.slice(offset);
-
-    if (users.length === 0) {
-      users = await getAllUsers();
-    }
-
-    const userByIdentity = new Map<string, (typeof users)[number]>();
-    for (const user of users) {
-      const identities = buildUserIdentitySet({
-        id: user.id,
-        username: user.username,
-        email: user.email,
-        firebaseUid: user.firebaseUid,
-      });
-      identities.forEach((identity) => {
-        userByIdentity.set(identity, user);
-      });
-    }
-
-    const reportsWithFaculty = pagedReports.map((report) => {
-      const facultyUser = userByIdentity.get(
-        normalizeIdentity(report.facultyId),
-      );
-      return {
-        ...report,
-        facultyName: facultyUser?.name,
-        department: facultyUser?.department ?? report.department,
-      };
-    });
 
     if (!includeMeta) {
       return NextResponse.json({
         reports: reportsWithFaculty,
-        total: filteredReports.length,
+        total: sortedReports.length,
         offset,
         limit,
       });
     }
 
-    const communities = (await reportsCollection.distinct("community"))
-      .filter((value): value is string => typeof value === "string")
-      .map((value) => value.trim())
+    const configuredCommunities = await readJsonFile<string[]>(
+      "reports/communities.json",
+    );
+    const communities = Array.from(
+      new Set([
+        ...(configuredCommunities || []),
+        ...sortedReports.map((report) => String(report.community || "")),
+      ]),
+    )
+      .map((value) => String(value || "").trim())
       .filter(Boolean)
       .sort((a, b) => a.localeCompare(b));
+
     return NextResponse.json({
       reports: reportsWithFaculty,
       communities,
-      total: filteredReports.length,
+      total: sortedReports.length,
       offset,
       limit,
     });

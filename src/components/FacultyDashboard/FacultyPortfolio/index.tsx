@@ -176,7 +176,7 @@ export function FacultyPortfolio({ faculty, onBack }: FacultyPortfolioProps) {
 
         const reportsPromise = (async () => {
           const reportsResponse = await fetch(
-            `/api/event-reports?facultyId=${encodeURIComponent(faculty.id)}&limit=${pageSize}&offset=${(eventReportsPage - 1) * pageSize}&includeMeta=0`,
+            `/api/event-reports?facultyId=${encodeURIComponent(faculty.id)}&limit=${pageSize}&offset=${(eventReportsPage - 1) * pageSize}&includeMeta=0&includeFaculty=0`,
           );
           const reportsData = await reportsResponse.json();
           if (!reportsResponse.ok) {
