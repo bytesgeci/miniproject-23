@@ -71,8 +71,11 @@ export function EventReportManager({
   communities = [],
 }: EventReportManagerProps) {
   const [reports, setReports] = useState<EventReport[]>(initialReports);
-  const [communityOptions, setCommunityOptions] =
-    useState<string[]>(communities);
+  const [communityOptions, setCommunityOptions] = useState<string[]>(
+    communities
+      .map((community) => String(community || "").trim())
+      .filter(Boolean),
+  );
   const { user, userRole } = useAuth();
   const displayName = user?.name ?? "";
 
@@ -116,7 +119,9 @@ export function EventReportManager({
         }
         setReports(data.reports ?? []);
         setCommunityOptions(
-          (data.communities ?? []).filter((community) => community.trim()),
+          (data.communities ?? [])
+            .map((community: string) => String(community || "").trim())
+            .filter(Boolean),
         );
       } catch (error) {
         console.error("Load reports error:", error);
@@ -621,7 +626,7 @@ export function EventReportManager({
                         <SelectValue placeholder="Select community type" />
                       </SelectTrigger>
                       <SelectContent>
-                        {communityOptions.map((community) => (
+                        {communityOptions.filter(Boolean).map((community) => (
                           <SelectItem key={community} value={community}>
                             {community}
                           </SelectItem>

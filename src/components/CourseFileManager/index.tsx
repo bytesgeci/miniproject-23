@@ -178,9 +178,14 @@ export function CourseFileManager({
   fileTypes = [],
 }: CourseFileManagerProps) {
   const [files, setFiles] = useState<CourseFile[]>(initialFiles);
-  const [categoryOptions, setCategoryOptions] =
-    useState<string[]>(fileCategories);
-  const [typeOptions, setTypeOptions] = useState<string[]>(fileTypes);
+  const [categoryOptions, setCategoryOptions] = useState<string[]>(
+    fileCategories
+      .map((category) => String(category || "").trim())
+      .filter(Boolean),
+  );
+  const [typeOptions, setTypeOptions] = useState<string[]>(
+    fileTypes.map((type) => String(type || "").trim()).filter(Boolean),
+  );
   const [loadingFiles, setLoadingFiles] = useState(initialFiles.length === 0);
   const { user, userRole } = useAuth();
 
@@ -283,8 +288,16 @@ export function CourseFileManager({
           return;
         }
         setFiles(data.files ?? []);
-        setCategoryOptions(data.fileCategories ?? []);
-        setTypeOptions(data.fileTypes ?? []);
+        setCategoryOptions(
+          (data.fileCategories ?? [])
+            .map((category: string) => String(category || "").trim())
+            .filter(Boolean),
+        );
+        setTypeOptions(
+          (data.fileTypes ?? [])
+            .map((type: string) => String(type || "").trim())
+            .filter(Boolean),
+        );
       } catch (error) {
         if ((error as Error).name === "AbortError") {
           return;

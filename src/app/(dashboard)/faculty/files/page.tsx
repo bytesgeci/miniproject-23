@@ -7,12 +7,16 @@ export const revalidate = 20;
 
 export default async function FacultyFilesPage() {
   const files = await readJsonFile<CourseFile[]>("courseFiles.json");
-  const fileCategories = await readJsonFile<string[]>(
-    "files/course-file-categories.json",
-  );
-  const fileTypes = await readJsonFile<string[]>(
-    "files/course-file-types.json",
-  );
+  const fileCategories = (
+    await readJsonFile<string[]>("files/course-file-categories.json")
+  )
+    .map((category) => String(category || "").trim())
+    .filter(Boolean);
+  const fileTypes = (
+    await readJsonFile<string[]>("files/course-file-types.json")
+  )
+    .map((type) => String(type || "").trim())
+    .filter(Boolean);
 
   return (
     <main className="space-y-6">

@@ -7,7 +7,9 @@ export const revalidate = 20;
 
 export default async function FacultyReportsPage() {
   const reports = await readJsonFile<EventReport[]>("eventReports.json");
-  const communities = await readJsonFile<string[]>("reports/communities.json");
+  const communities = (await readJsonFile<string[]>("reports/communities.json"))
+    .map((community) => String(community || "").trim())
+    .filter(Boolean);
 
   return (
     <main className="space-y-6">
