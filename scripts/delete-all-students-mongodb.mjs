@@ -4,7 +4,7 @@ import path from "path";
 
 async function deleteAllStudents() {
   const uri = process.env.MONGODB_URI;
-  const dbName = process.env.MONGODB_DB || "miniproject";
+  const dbName = process.env.MONGODB_DB || "miniproject_v2";
 
   if (!uri) {
     console.error("❌ MONGODB_URI environment variable not set");

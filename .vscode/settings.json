@@ -56,8 +56,8 @@
   "C_Cpp_Runner.msvcSecureNoWarnings": false,
   "mdb.presetConnections": [
     {
-      "name": "Atlas - miniproject",
-      "connectionString": "mongodb://bytesgeci_db_user:nXDxN3ppcJh0qfxl@ac-qiogz23-shard-00-00.xgfr7pn.mongodb.net:27017,ac-qiogz23-shard-00-01.xgfr7pn.mongodb.net:27017,ac-qiogz23-shard-00-02.xgfr7pn.mongodb.net:27017/miniproject?ssl=true&replicaSet=atlas-ct53xl-shard-0&authSource=admin&retryWrites=true&w=majority"
+      "name": "Atlas - miniproject_v2",
+      "connectionString": "mongodb://bytesgeci_db_user:nXDxN3ppcJh0qfxl@ac-qiogz23-shard-00-00.xgfr7pn.mongodb.net:27017,ac-qiogz23-shard-00-01.xgfr7pn.mongodb.net:27017,ac-qiogz23-shard-00-02.xgfr7pn.mongodb.net:27017/miniproject_v2?ssl=true&replicaSet=atlas-ct53xl-shard-0&authSource=admin&retryWrites=true&w=majority"
     }
   ]
 }
