@@ -99,7 +99,7 @@ export function FacultyProfileView({
       try {
         const [filesResponse, reportsResponse] = await Promise.all([
           fetch(
-            `/api/course-files?facultyId=${encodeURIComponent(faculty.id)}&limit=${pageSize}&offset=${(courseFilesPage - 1) * pageSize}&includeMeta=0&includeFaculty=0&fields=facultyId,fileName,documentUrl,courseCode,courseName,fileType,uploadDate,semester,academicYear,status,auditorRemarks,auditChecklistStatus,auditChecklistFinalized,auditChecklistReport`,
+            `/api/course-files?facultyId=${encodeURIComponent(faculty.id)}&limit=${pageSize}&offset=${(courseFilesPage - 1) * pageSize}&includeMeta=0&includeFaculty=0&fields=facultyId,fileName,courseCode,courseName,fileType,uploadDate,semester,academicYear,status,auditorRemarks,auditChecklistStatus,auditChecklistFinalized,auditChecklistReport`,
             { cache: "no-store" },
           ),
           fetch(
@@ -155,9 +155,21 @@ export function FacultyProfileView({
     }
   };
 
-  const handleViewFile = (file: CourseFile) => {
+  const handleViewFile = async (file: CourseFile) => {
     setSelectedFile(file);
     setIsFileViewOpen(true);
+
+    try {
+      const response = await fetch(`/api/course-files/${file.id}`, {
+        cache: "no-store",
+      });
+      const data = await response.json();
+      if (response.ok && data?.file) {
+        setSelectedFile(data.file as CourseFile);
+      }
+    } catch (error) {
+      console.error("Load full course file error:", error);
+    }
   };
 
   const handleViewReport = async (report: EventReport) => {

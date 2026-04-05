@@ -2,6 +2,29 @@ import { NextRequest, NextResponse } from "next/server";
 import { readJsonFile, writeJsonFile } from "@/lib/jsonDb";
 import type { CourseFile } from "@/components/CourseFileManager/types";
 
+export async function GET(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  try {
+    const { id } = await params;
+    const files = await readJsonFile<CourseFile[]>("courseFiles.json");
+    const file = files.find((item) => item.id === id);
+
+    if (!file) {
+      return NextResponse.json({ error: "File not found" }, { status: 404 });
+    }
+
+    return NextResponse.json({ file });
+  } catch (error) {
+    console.error("Course file get-by-id error:", error);
+    return NextResponse.json(
+      { error: "Failed to load course file" },
+      { status: 500 },
+    );
+  }
+}
+
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },

@@ -53,25 +53,18 @@ const getStatusIcon = (status: string) => {
   }
 };
 
-// Helper function to download file
+// Helper function to download file by id (avoids shipping documentUrl in list payloads)
 const downloadFile = (file: CourseFile) => {
-  if (file.documentUrl) {
-    // If it's a URL path, open in new tab
-    if (
-      file.documentUrl.startsWith("/uploads") ||
-      file.documentUrl.startsWith("http")
-    ) {
-      window.open(file.documentUrl, "_blank");
-    } else {
-      // Handle data URL
-      const link = document.createElement("a");
-      link.href = file.documentUrl;
-      link.download = file.fileName;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    }
+  if (!file.id) {
+    return;
   }
+
+  const link = document.createElement("a");
+  link.href = `/api/course-files/${encodeURIComponent(file.id)}/download`;
+  link.download = file.fileName;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
 };
 
 export function CourseCodeCards({
@@ -305,16 +298,14 @@ export function CourseCodeCards({
                         >
                           <Eye className="h-4 w-4" />
                         </Button>
-                        {file.documentUrl && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => downloadFile(file)}
-                            className="h-8 w-8 p-0"
-                          >
-                            <Download className="h-4 w-4" />
-                          </Button>
-                        )}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => downloadFile(file)}
+                          className="h-8 w-8 p-0"
+                        >
+                          <Download className="h-4 w-4" />
+                        </Button>
                       </div>
                       <div className="ml-2 flex items-center gap-1">
                         <Button
