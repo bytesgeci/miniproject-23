@@ -97,36 +97,28 @@ export function FacultyProfileView({
   useEffect(() => {
     const loadPortfolioData = async () => {
       try {
-        const [filesResponse, reportsResponse] = await Promise.all([
-          fetch(
-            `/api/course-files?facultyId=${encodeURIComponent(faculty.id)}&limit=${pageSize}&offset=${(courseFilesPage - 1) * pageSize}&includeMeta=0&includeFaculty=0&fields=facultyId,fileName,courseCode,courseName,fileType,uploadDate,semester,academicYear,status,auditorRemarks,auditChecklistStatus,auditChecklistFinalized,auditChecklistReport`,
-            { cache: "no-store" },
-          ),
-          fetch(
-            `/api/event-reports?facultyId=${encodeURIComponent(faculty.id)}&limit=${pageSize}&offset=${(eventReportsPage - 1) * pageSize}&includeMeta=0&includeFaculty=0&fields=facultyId,eventName,eventType,eventDate,location,participants,duration,status,facultyCoordinator,community,department,description,objectives,outcomes`,
-            { cache: "no-store" },
-          ),
-        ]);
+        const response = await fetch(
+          `/api/faculty-portfolio?facultyId=${encodeURIComponent(faculty.id)}&pageSize=${pageSize}&courseFilesPage=${courseFilesPage}&eventReportsPage=${eventReportsPage}`,
+          {
+            cache: "no-store",
+          },
+        );
 
-        const filesData = await filesResponse.json();
-        const reportsData = await reportsResponse.json();
+        const data = await response.json();
+        if (response.ok) {
+          const scopedFiles: CourseFile[] = data.files ?? [];
+          const scopedReports: EventReport[] = data.reports ?? [];
 
-        if (filesResponse.ok) {
-          const scopedFiles: CourseFile[] = filesData.files ?? [];
           setCourseFiles(scopedFiles);
+          setEventReports(scopedReports);
           setCourseFilesTotal(
-            typeof filesData.total === "number"
-              ? filesData.total
+            typeof data.totalFiles === "number"
+              ? data.totalFiles
               : scopedFiles.length,
           );
-        }
-
-        if (reportsResponse.ok) {
-          const scopedReports: EventReport[] = reportsData.reports ?? [];
-          setEventReports(scopedReports);
           setEventReportsTotal(
-            typeof reportsData.total === "number"
-              ? reportsData.total
+            typeof data.totalReports === "number"
+              ? data.totalReports
               : scopedReports.length,
           );
         }

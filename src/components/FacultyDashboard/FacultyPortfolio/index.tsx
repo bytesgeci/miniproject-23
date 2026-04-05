@@ -151,45 +151,38 @@ export function FacultyPortfolio({ faculty, onBack }: FacultyPortfolioProps) {
 
     const loadPortfolioData = async () => {
       try {
-        const filesPromise = (async () => {
-          const filesResponse = await fetch(
-            `/api/course-files?facultyId=${encodeURIComponent(faculty.id)}&limit=${pageSize}&offset=${(courseFilesPage - 1) * pageSize}&includeMeta=0&includeFaculty=0&fields=facultyId,fileName,courseCode,courseName,fileType,uploadDate,semester,academicYear,status,auditorRemarks,auditChecklistStatus,auditChecklistFinalized,auditChecklistReport`,
+        const portfolioPromise = (async () => {
+          const portfolioResponse = await fetch(
+            `/api/faculty-portfolio?facultyId=${encodeURIComponent(faculty.id)}&pageSize=${pageSize}&courseFilesPage=${courseFilesPage}&eventReportsPage=${eventReportsPage}`,
+            {
+              cache: "no-store",
+            },
           );
-          const filesData = await filesResponse.json();
-          if (!filesResponse.ok) {
+          const portfolioData = await portfolioResponse.json();
+          if (!portfolioResponse.ok) {
             return;
           }
 
-          const scopedFiles: CourseFile[] = filesData.files ?? [];
+          const scopedFiles: CourseFile[] = portfolioData.files ?? [];
+          const scopedReports: EventReport[] = portfolioData.reports ?? [];
           const autoCourses = buildCourseTeachingEntries(scopedFiles);
+
           setCourseFiles(scopedFiles);
+          setEventReports(scopedReports);
           setCourseFilesTotal(
-            typeof filesData.total === "number"
-              ? filesData.total
+            typeof portfolioData.totalFiles === "number"
+              ? portfolioData.totalFiles
               : scopedFiles.length,
+          );
+          setEventReportsTotal(
+            typeof portfolioData.totalReports === "number"
+              ? portfolioData.totalReports
+              : scopedReports.length,
           );
           setProfileFaculty((previous) => ({
             ...previous,
             courses: autoCourses,
           }));
-        })();
-
-        const reportsPromise = (async () => {
-          const reportsResponse = await fetch(
-            `/api/event-reports?facultyId=${encodeURIComponent(faculty.id)}&limit=${pageSize}&offset=${(eventReportsPage - 1) * pageSize}&includeMeta=0&includeFaculty=0&fields=facultyId,eventName,eventType,eventDate,location,participants,duration,status,facultyCoordinator,community,department,description,objectives,outcomes`,
-          );
-          const reportsData = await reportsResponse.json();
-          if (!reportsResponse.ok) {
-            return;
-          }
-
-          const scopedReports: EventReport[] = reportsData.reports ?? [];
-          setEventReports(scopedReports);
-          setEventReportsTotal(
-            typeof reportsData.total === "number"
-              ? reportsData.total
-              : scopedReports.length,
-          );
         })();
 
         const studentsPromise = (async () => {
@@ -237,12 +230,7 @@ export function FacultyPortfolio({ faculty, onBack }: FacultyPortfolioProps) {
           }
         })();
 
-        await Promise.all([
-          filesPromise,
-          reportsPromise,
-          studentsPromise,
-          messagesPromise,
-        ]);
+        await Promise.all([portfolioPromise, studentsPromise, messagesPromise]);
       } catch (error) {
         console.error("Load faculty portfolio error:", error);
       }
