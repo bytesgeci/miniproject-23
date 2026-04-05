@@ -4,6 +4,7 @@ import { getMongoDb } from "@/lib/mongoDb";
 import { COLLECTIONS, ensureNormalizedIndexes } from "@/lib/mongoNormalized";
 import type { EventReport } from "@/components/EventReportManager/types";
 import { getAllUsers } from "@/lib/userStore";
+import type { UserRecord } from "@/lib/userStore";
 
 function parsePositiveInt(value: string | null, fallback: number) {
   if (!value) {
@@ -30,10 +31,10 @@ function normalizeIdentity(value: unknown) {
 }
 
 function buildUserIdentitySet(user: {
-  id?: string;
-  username?: string;
-  email?: string;
-  firebaseUid?: string;
+  id?: UserRecord["id"];
+  username?: UserRecord["username"];
+  email?: UserRecord["email"];
+  firebaseUid?: UserRecord["firebaseUid"];
 }) {
   const identities = new Set<string>();
   [user.id, user.username, user.email, user.firebaseUid].forEach((value) => {
@@ -45,10 +46,7 @@ function buildUserIdentitySet(user: {
   return identities;
 }
 
-function resolveUserByAnyIdentity(
-  users: Array<Record<string, unknown>>,
-  value: unknown,
-) {
+function resolveUserByAnyIdentity(users: UserRecord[], value: unknown) {
   const lookup = normalizeIdentity(value);
   if (!lookup) {
     return null;
@@ -57,10 +55,10 @@ function resolveUserByAnyIdentity(
   return (
     users.find((user) => {
       const identities = buildUserIdentitySet({
-        id: String(user.id ?? ""),
-        username: String(user.username ?? ""),
-        email: String(user.email ?? ""),
-        firebaseUid: String(user.firebaseUid ?? ""),
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        firebaseUid: user.firebaseUid,
       });
       return identities.has(lookup);
     }) ?? null
@@ -150,10 +148,10 @@ export async function GET(request: NextRequest) {
       : null;
     const facultyIdentitySet = requestedFacultyUser
       ? buildUserIdentitySet({
-          id: String(requestedFacultyUser.id ?? ""),
-          username: String(requestedFacultyUser.username ?? ""),
-          email: String(requestedFacultyUser.email ?? ""),
-          firebaseUid: String(requestedFacultyUser.firebaseUid ?? ""),
+          id: requestedFacultyUser.id,
+          username: requestedFacultyUser.username,
+          email: requestedFacultyUser.email,
+          firebaseUid: requestedFacultyUser.firebaseUid,
         })
       : new Set<string>();
 
@@ -232,10 +230,10 @@ export async function GET(request: NextRequest) {
     const userByIdentity = new Map<string, (typeof users)[number]>();
     for (const user of users) {
       const identities = buildUserIdentitySet({
-        id: String(user.id ?? ""),
-        username: String(user.username ?? ""),
-        email: String(user.email ?? ""),
-        firebaseUid: String(user.firebaseUid ?? ""),
+        id: user.id,
+        username: user.username,
+        email: user.email,
+        firebaseUid: user.firebaseUid,
       });
       identities.forEach((identity) => {
         userByIdentity.set(identity, user);
