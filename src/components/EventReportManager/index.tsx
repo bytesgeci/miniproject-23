@@ -66,15 +66,22 @@ interface AuditorMessage {
   createdAt?: string;
 }
 
+function normalizeCommunityOptions(values: Array<string | undefined | null>) {
+  return Array.from(
+    new Set(values.map((value) => String(value || "").trim()).filter(Boolean)),
+  ).sort((a, b) => a.localeCompare(b));
+}
+
 export function EventReportManager({
   initialReports = [],
   communities = [],
 }: EventReportManagerProps) {
   const [reports, setReports] = useState<EventReport[]>(initialReports);
   const [communityOptions, setCommunityOptions] = useState<string[]>(
-    communities
-      .map((community) => String(community || "").trim())
-      .filter(Boolean),
+    normalizeCommunityOptions([
+      ...communities,
+      ...initialReports.map((report) => report.community),
+    ]),
   );
   const { user, userRole } = useAuth();
   const displayName = user?.name ?? "";
@@ -117,11 +124,13 @@ export function EventReportManager({
           toast.error(data.error || "Failed to load reports");
           return;
         }
-        setReports(data.reports ?? []);
+        const nextReports = data.reports ?? [];
+        setReports(nextReports);
         setCommunityOptions(
-          (data.communities ?? [])
-            .map((community: string) => String(community || "").trim())
-            .filter(Boolean),
+          normalizeCommunityOptions([
+            ...(data.communities ?? []),
+            ...nextReports.map((report: EventReport) => report.community),
+          ]),
         );
       } catch (error) {
         console.error("Load reports error:", error);
