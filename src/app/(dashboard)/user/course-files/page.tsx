@@ -38,6 +38,25 @@ interface CourseFileRecord {
   };
 }
 
+function isAuditorVerifiedCourseFile(file: CourseFileRecord) {
+  const status = String(file.status || "")
+    .trim()
+    .toLowerCase();
+  const checklistStatus = String(file.auditChecklistStatus || "")
+    .trim()
+    .toLowerCase();
+  const checklistDecision = String(file.auditChecklistReport?.decision || "")
+    .trim()
+    .toLowerCase();
+
+  return (
+    status === "approved" ||
+    checklistStatus === "yes" ||
+    file.auditChecklistFinalized === true ||
+    checklistDecision === "approve"
+  );
+}
+
 interface SemesterGroup {
   semester: string;
   files: CourseFileRecord[];
@@ -84,7 +103,7 @@ export default async function UserCourseFilesPage() {
   ]);
 
   const approvedFiles = files
-    .filter((file) => String(file.status || "") === "Approved")
+    .filter((file) => isAuditorVerifiedCourseFile(file))
     .map((file) => ({
       ...file,
       facultyName: file.facultyName || "N/A",

@@ -2,9 +2,18 @@ import { readJsonFile } from "@/lib/jsonDb";
 
 interface CourseFileForCount {
   status?: string;
+  auditChecklistStatus?: string;
+  auditChecklistFinalized?: boolean;
+  auditChecklistReport?: {
+    decision?: string;
+  };
   courseCode?: string;
   academicYear?: string;
   semester?: string;
+}
+
+interface EventReportForCount {
+  status?: string;
 }
 
 export interface UserSectionCounts {
@@ -37,14 +46,33 @@ function isApprovedStatus(status?: string) {
   );
 }
 
+function isAuditorVerifiedCourseFile(file: CourseFileForCount) {
+  const checklistStatus = String(file.auditChecklistStatus || "")
+    .trim()
+    .toLowerCase();
+  const checklistDecision = String(file.auditChecklistReport?.decision || "")
+    .trim()
+    .toLowerCase();
+
+  return (
+    isApprovedStatus(file.status) ||
+    checklistStatus === "yes" ||
+    file.auditChecklistFinalized === true ||
+    checklistDecision === "approve"
+  );
+}
+
 export async function getUserSectionCounts(): Promise<UserSectionCounts> {
   const [files, reports, students] = await Promise.all([
     readJsonFile<CourseFileForCount[]>("courseFiles.json"),
-    readJsonFile<unknown[]>("eventReports.json"),
+    readJsonFile<EventReportForCount[]>("eventReports.json"),
     readJsonFile<unknown[]>("students.json"),
   ]);
 
-  const approvedFiles = files.filter((file) => isApprovedStatus(file.status));
+  const approvedFiles = files.filter(isAuditorVerifiedCourseFile);
+  const approvedReports = reports.filter((report) =>
+    isApprovedStatus(report.status),
+  );
   const latestBatch = approvedFiles
     .map((file) => String(file.academicYear || "").trim())
     .filter((batch) => Boolean(batch))
@@ -73,7 +101,7 @@ export async function getUserSectionCounts(): Promise<UserSectionCounts> {
         .map((file) => normalizeCourseCode(file.courseCode))
         .filter((courseCode) => Boolean(courseCode)),
     ).size,
-    eventReportsCount: reports.length,
+    eventReportsCount: approvedReports.length,
     studentsCount: students.length,
   };
 }

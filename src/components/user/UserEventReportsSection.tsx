@@ -65,7 +65,7 @@ export function UserEventReportsSection({
       {reports.length === 0 ? (
         <Alert>
           <AlertDescription className="text-sm text-gray-500">
-            No event reports available yet.
+            No auditor-approved event reports available yet.
           </AlertDescription>
         </Alert>
       ) : (

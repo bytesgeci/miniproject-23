@@ -40,6 +40,13 @@ export default async function UserEventReportsPage() {
       .map((user) => [String(user.id), user.name]),
   );
 
+  const approvedReports = reports.filter(
+    (report) =>
+      String(report.status || "")
+        .trim()
+        .toLowerCase() === "approved",
+  );
+
   const pageData: UserEventReportsPageData = {
     approvedCourseCodesCount: sectionCounts.approvedCourseCodesCount,
     facultyNameById,
@@ -67,7 +74,7 @@ export default async function UserEventReportsPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <UserEventReportsSection
-            reports={reports}
+            reports={approvedReports}
             facultyNameById={facultyNameById}
           />
         </CardContent>

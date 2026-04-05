@@ -93,6 +93,25 @@ function estimateDataUrlBytes(dataUrl: string) {
   return Math.floor((base64Payload.length * 3) / 4) - padding;
 }
 
+function isAuditorValidatedCourseFile(file: Partial<CourseFile>) {
+  const status = String(file.status || "")
+    .trim()
+    .toLowerCase();
+  const checklistStatus = String(file.auditChecklistStatus || "")
+    .trim()
+    .toLowerCase();
+  const checklistDecision = String(file.auditChecklistReport?.decision || "")
+    .trim()
+    .toLowerCase();
+
+  return (
+    status === "approved" ||
+    checklistStatus === "yes" ||
+    file.auditChecklistFinalized === true ||
+    checklistDecision === "approve"
+  );
+}
+
 export async function POST(request: NextRequest) {
   try {
     const payload = await request.json();
@@ -204,11 +223,11 @@ export async function POST(request: NextRequest) {
     if (duplicateIndex !== -1) {
       // Delete the old file from disk if it exists
       const oldFile = files[duplicateIndex];
-      if (oldFile.auditChecklistStatus === "yes") {
+      if (isAuditorValidatedCourseFile(oldFile)) {
         return NextResponse.json(
           {
             error:
-              "This file type is checklist-approved by the auditor and cannot be replaced.",
+              "This file has been validated by the auditor and cannot be replaced.",
           },
           { status: 403 },
         );

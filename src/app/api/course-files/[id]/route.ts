@@ -2,6 +2,25 @@ import { NextRequest, NextResponse } from "next/server";
 import { readJsonFile, writeJsonFile } from "@/lib/jsonDb";
 import type { CourseFile } from "@/components/CourseFileManager/types";
 
+function isAuditorValidatedCourseFile(file: Partial<CourseFile>) {
+  const status = String(file.status || "")
+    .trim()
+    .toLowerCase();
+  const checklistStatus = String(file.auditChecklistStatus || "")
+    .trim()
+    .toLowerCase();
+  const checklistDecision = String(file.auditChecklistReport?.decision || "")
+    .trim()
+    .toLowerCase();
+
+  return (
+    status === "approved" ||
+    checklistStatus === "yes" ||
+    file.auditChecklistFinalized === true ||
+    checklistDecision === "approve"
+  );
+}
+
 export async function GET(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -69,11 +88,11 @@ export async function DELETE(
     const files = await readJsonFile<CourseFile[]>("courseFiles.json");
     const fileToDelete = files.find((file) => file.id === id);
 
-    if (fileToDelete?.auditChecklistStatus === "yes") {
+    if (fileToDelete && isAuditorValidatedCourseFile(fileToDelete)) {
       return NextResponse.json(
         {
           error:
-            "This file is checklist-approved by the auditor and cannot be deleted.",
+            "This file has been validated by the auditor and cannot be deleted.",
         },
         { status: 403 },
       );
