@@ -6,7 +6,7 @@ const projectRoot = process.cwd();
 const dataRoot = path.join(projectRoot, "src", "data");
 
 const MONGODB_URI = process.env.MONGODB_URI;
-const MONGODB_DB = process.env.MONGODB_DB || "miniproject";
+const MONGODB_DB = process.env.MONGODB_DB || "miniproject_v2";
 
 if (!MONGODB_URI) {
   console.error("MONGODB_URI is required");

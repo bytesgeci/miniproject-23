@@ -35,6 +35,6 @@ export async function getMongoClient() {
 
 export async function getMongoDb() {
   const client = await getMongoClient();
-  const dbName = process.env.MONGODB_DB || "miniproject";
+  const dbName = process.env.MONGODB_DB || "miniproject_v2";
   return client.db(dbName);
 }

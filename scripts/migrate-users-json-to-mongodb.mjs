@@ -4,7 +4,9 @@ import crypto from "crypto";
 import { MongoClient } from "mongodb";
 
 function normalizeIdentity(value) {
-  return String(value || "").trim().toLowerCase();
+  return String(value || "")
+    .trim()
+    .toLowerCase();
 }
 
 function loadUsersFromJson() {
@@ -35,7 +37,7 @@ async function main() {
     throw new Error("MONGODB_URI is required to run this migration.");
   }
 
-  const dbName = process.env.MONGODB_DB || "miniproject";
+  const dbName = process.env.MONGODB_DB || "miniproject_v2";
   const jsonUsers = loadUsersFromJson();
 
   if (!jsonUsers.length) {
@@ -55,9 +57,8 @@ async function main() {
       const username = normalizeIdentity(user.username || user.email);
       const email = normalizeIdentity(user.email || username);
       const role = user.role || "faculty";
-      const roles = Array.isArray(user.roles) && user.roles.length
-        ? user.roles
-        : [role];
+      const roles =
+        Array.isArray(user.roles) && user.roles.length ? user.roles : [role];
 
       const payload = {
         ...user,

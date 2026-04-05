@@ -19,7 +19,7 @@ admin.initializeApp({
 });
 
 const mongoUri = process.env.MONGODB_URI;
-const mongoDbName = process.env.MONGODB_DB || "miniproject";
+const mongoDbName = process.env.MONGODB_DB || "miniproject_v2";
 
 if (!mongoUri) {
   console.error("❌ MONGODB_URI environment variable not set");

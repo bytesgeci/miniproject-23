@@ -14,7 +14,7 @@ const client = new MongoClient(uri);
 
 try {
   await client.connect();
-  const db = client.db("miniproject");
+  const db = client.db(process.env.MONGODB_DB || "miniproject_v2");
   const users = await db
     .collection("users")
     .find(
