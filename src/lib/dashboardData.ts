@@ -77,6 +77,12 @@ interface PendingAuditFacultyResponse {
 
 interface LocalCourseFileRecord {
   facultyId?: string;
+  uploadedBy?: string;
+  uploadedById?: string;
+  facultyName?: string;
+  facultyEmail?: string;
+  email?: string;
+  username?: string;
   status?: string;
   fileName?: string;
   courseCode?: string;
@@ -236,6 +242,90 @@ async function buildLocalFacultyCourseFileStats(
   };
 }
 
+async function enrichFacultyMembersWithLocalCourses(
+  facultyMembers: FacultyMember[],
+) {
+  if (!facultyMembers.length) {
+    return facultyMembers;
+  }
+
+  const files = await readJsonFile<LocalCourseFileRecord[]>("courseFiles.json");
+  if (!files?.length) {
+    return facultyMembers;
+  }
+
+  return facultyMembers.map((member) => {
+    const identityCandidates = buildUserIdentityCandidates({
+      id: String(member.id || ""),
+      username: String(member.username || ""),
+      email: String(member.email || ""),
+    });
+
+    const normalizedMemberName = normalizeIdentity(member.name);
+    const normalizedMemberEmail = normalizeIdentity(member.email);
+
+    const matchedFiles = files.filter((file) => {
+      const identityFields = [
+        file.facultyId,
+        file.uploadedBy,
+        file.uploadedById,
+        file.username,
+        file.facultyEmail,
+        file.email,
+      ];
+
+      const byIdentity = identityFields.some((value) => {
+        const normalized = normalizeIdentity(value);
+        if (!normalized) {
+          return false;
+        }
+        return normalizeIdForMatching(normalized).some((id) =>
+          identityCandidates.has(id),
+        );
+      });
+
+      if (byIdentity) {
+        return true;
+      }
+
+      const fileFacultyName = normalizeIdentity(file.facultyName);
+      if (fileFacultyName && normalizedMemberName) {
+        return fileFacultyName === normalizedMemberName;
+      }
+
+      const fileEmail = normalizeIdentity(file.facultyEmail || file.email);
+      if (fileEmail && normalizedMemberEmail) {
+        return fileEmail === normalizedMemberEmail;
+      }
+
+      return false;
+    });
+
+    if (matchedFiles.length === 0) {
+      return member;
+    }
+
+    const localCourses = Array.from(
+      new Set(
+        matchedFiles.map((file) => formatCourseLabel(file)).filter(Boolean),
+      ),
+    ).sort((a, b) => a.localeCompare(b));
+
+    if (localCourses.length === 0) {
+      return member;
+    }
+
+    const mergedCourses = Array.from(
+      new Set([...(member.courses || []), ...localCourses]),
+    ).sort((a, b) => a.localeCompare(b));
+
+    return {
+      ...member,
+      courses: mergedCourses,
+    };
+  });
+}
+
 async function buildLocalFacultyEventReportStats(
   identityCandidates: Set<string>,
 ) {
@@ -345,7 +435,10 @@ async function buildLocalFacultyDashboardData(
     recentActivity: [],
   };
 
-  const selectedUser = facultyMembers.find((member) => {
+  const enrichedFacultyMembers =
+    await enrichFacultyMembersWithLocalCourses(facultyMembers);
+
+  const selectedUser = enrichedFacultyMembers.find((member) => {
     const normalizedUsernameField = normalizeIdentity(member.username);
     const normalizedName = normalizeIdentity(member.name);
     const normalizedEmail = normalizeIdentity(member.email);
@@ -387,7 +480,7 @@ async function buildLocalFacultyDashboardData(
     }
   }
 
-  return { stats, facultyMembers };
+  return { stats, facultyMembers: enrichedFacultyMembers };
 }
 
 async function buildPendingMapFromLocalData() {
@@ -663,6 +756,15 @@ export async function getFacultyDashboardData(
     const dashboardData =
       await fetchFromDashboardAPI<FacultyListResponse>("/faculty-list");
     let facultyMembers = dashboardData.facultyMembers || [];
+
+    try {
+      facultyMembers =
+        await enrichFacultyMembersWithLocalCourses(facultyMembers);
+    } catch (error) {
+      console.warn("Local course enrichment for faculty list failed", {
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
 
     // If username specified, get their individual stats
     const stats: DashboardStats = {
