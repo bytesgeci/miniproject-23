@@ -180,6 +180,8 @@ export async function GET(request: NextRequest) {
         .distinct("community")
     )
       .filter((value): value is string => typeof value === "string")
+      .map((value) => value.trim())
+      .filter(Boolean)
       .sort((a, b) => a.localeCompare(b));
     return NextResponse.json({
       reports: reportsWithFaculty,

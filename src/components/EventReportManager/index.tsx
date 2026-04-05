@@ -115,7 +115,9 @@ export function EventReportManager({
           return;
         }
         setReports(data.reports ?? []);
-        setCommunityOptions(data.communities ?? []);
+        setCommunityOptions(
+          (data.communities ?? []).filter((community) => community.trim()),
+        );
       } catch (error) {
         console.error("Load reports error:", error);
         toast.error("Failed to load reports");
