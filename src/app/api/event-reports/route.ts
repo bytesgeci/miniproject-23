@@ -153,32 +153,12 @@ export async function GET(request: NextRequest) {
 
     let users: UserRecord[] = [];
     let requestedFacultyUser: UserRecord | null = null;
-    if (facultyId) {
-      users = await getAllUsers();
-      requestedFacultyUser = resolveUserByAnyIdentity(users, facultyId);
-    }
-
-    const facultyIdentitySet = requestedFacultyUser
-      ? buildUserIdentitySet({
-          id: requestedFacultyUser.id,
-          username: requestedFacultyUser.username,
-          email: requestedFacultyUser.email,
-          firebaseUid: requestedFacultyUser.firebaseUid,
-        })
-      : new Set<string>();
-
-    if (!requestedFacultyUser && facultyId) {
-      const normalizedRequested = normalizeIdentity(facultyId);
-      if (normalizedRequested) {
-        facultyIdentitySet.add(normalizedRequested);
-      }
-    }
+    const facultyIdentitySet = new Set<string>();
 
     const query: Record<string, unknown> = {};
     if (facultyId) {
-      query.facultyId = {
-        $in: Array.from(facultyIdentitySet),
-      };
+      // Fast path: exact facultyId match first; fallback to identity expansion only if needed.
+      query.facultyId = facultyId;
     }
     if (status) {
       query.status = new RegExp(`^${status}$`, "i");
@@ -189,9 +169,38 @@ export async function GET(request: NextRequest) {
 
     // Fast path for faculty dashboard loads (no search text): let MongoDB filter/paginate.
     if (!search) {
-      const total = await reportsCollection.countDocuments(query);
+      let activeQuery = { ...query };
+      let total = await reportsCollection.countDocuments(activeQuery);
 
-      let cursor = reportsCollection.find(query).sort({ createdAt: -1 });
+      if (facultyId && total === 0) {
+        users = await getAllUsers();
+        requestedFacultyUser = resolveUserByAnyIdentity(users, facultyId);
+
+        if (requestedFacultyUser) {
+          const identities = buildUserIdentitySet({
+            id: requestedFacultyUser.id,
+            username: requestedFacultyUser.username,
+            email: requestedFacultyUser.email,
+            firebaseUid: requestedFacultyUser.firebaseUid,
+          });
+          identities.forEach((identity) => facultyIdentitySet.add(identity));
+        } else {
+          const normalizedRequested = normalizeIdentity(facultyId);
+          if (normalizedRequested) {
+            facultyIdentitySet.add(normalizedRequested);
+          }
+        }
+
+        if (facultyIdentitySet.size > 0) {
+          activeQuery = {
+            ...activeQuery,
+            facultyId: { $in: Array.from(facultyIdentitySet) },
+          };
+          total = await reportsCollection.countDocuments(activeQuery);
+        }
+      }
+
+      let cursor = reportsCollection.find(activeQuery).sort({ createdAt: -1 });
       if (offset > 0) {
         cursor = cursor.skip(offset);
       }
@@ -263,12 +272,45 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const reports = (await reportsCollection
-      .find(query)
+    let reportsQuery = { ...query };
+    let reports = (await reportsCollection
+      .find(reportsQuery)
       .sort({ createdAt: -1 })
       .toArray()) as EventReportWithFaculty[];
+
+    if (facultyId && reports.length === 0) {
+      users = await getAllUsers();
+      requestedFacultyUser = resolveUserByAnyIdentity(users, facultyId);
+
+      if (requestedFacultyUser) {
+        const identities = buildUserIdentitySet({
+          id: requestedFacultyUser.id,
+          username: requestedFacultyUser.username,
+          email: requestedFacultyUser.email,
+          firebaseUid: requestedFacultyUser.firebaseUid,
+        });
+        identities.forEach((identity) => facultyIdentitySet.add(identity));
+      } else {
+        const normalizedRequested = normalizeIdentity(facultyId);
+        if (normalizedRequested) {
+          facultyIdentitySet.add(normalizedRequested);
+        }
+      }
+
+      if (facultyIdentitySet.size > 0) {
+        reportsQuery = {
+          ...reportsQuery,
+          facultyId: { $in: Array.from(facultyIdentitySet) },
+        };
+        reports = (await reportsCollection
+          .find(reportsQuery)
+          .sort({ createdAt: -1 })
+          .toArray()) as EventReportWithFaculty[];
+      }
+    }
+
     const filteredReports = reports.filter((report) => {
-      if (facultyId) {
+      if (facultyIdentitySet.size > 0) {
         const reportFacultyIdentity = normalizeIdentity(report.facultyId);
         if (
           !reportFacultyIdentity ||
