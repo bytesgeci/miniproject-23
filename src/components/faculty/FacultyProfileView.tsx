@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import type { FacultyMember } from "@/types/faculty";
 import type {
   CourseFile,
@@ -44,6 +45,7 @@ export function FacultyProfileView({
     initialEventReports.length,
   );
   const [faculty, setFaculty] = useState(initialFaculty);
+  const [isPortfolioLoading, setIsPortfolioLoading] = useState(true);
 
   useEffect(() => {
     setCourseFilesPage(1);
@@ -96,6 +98,7 @@ export function FacultyProfileView({
 
   useEffect(() => {
     const loadPortfolioData = async () => {
+      setIsPortfolioLoading(true);
       try {
         const response = await fetch(
           `/api/faculty-portfolio?facultyId=${encodeURIComponent(faculty.id)}&pageSize=${pageSize}&courseFilesPage=${courseFilesPage}&eventReportsPage=${eventReportsPage}`,
@@ -124,6 +127,8 @@ export function FacultyProfileView({
         }
       } catch (error) {
         console.error("Load faculty profile portfolio data error:", error);
+      } finally {
+        setIsPortfolioLoading(false);
       }
     };
 
@@ -197,22 +202,34 @@ export function FacultyProfileView({
       <ProfileHeader faculty={faculty} />
 
       {/* Portfolio Tabs */}
-      <PortfolioTabs
-        courseFiles={courseFiles}
-        eventReports={eventReports}
-        courseFilesPage={courseFilesPage}
-        eventReportsPage={eventReportsPage}
-        pageSize={pageSize}
-        totalCourseFiles={courseFilesTotal}
-        totalEventReports={eventReportsTotal}
-        onCourseFilesPageChange={setCourseFilesPage}
-        onEventReportsPageChange={setEventReportsPage}
-        students={[]}
-        showStudents={false}
-        onViewFile={handleViewFile}
-        onViewReport={handleViewReport}
-        getStatusColor={getStatusColor}
-      />
+      {isPortfolioLoading &&
+      courseFiles.length === 0 &&
+      eventReports.length === 0 ? (
+        <Card>
+          <CardContent className="pt-6 space-y-4">
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-24 w-full" />
+            <Skeleton className="h-24 w-full" />
+          </CardContent>
+        </Card>
+      ) : (
+        <PortfolioTabs
+          courseFiles={courseFiles}
+          eventReports={eventReports}
+          courseFilesPage={courseFilesPage}
+          eventReportsPage={eventReportsPage}
+          pageSize={pageSize}
+          totalCourseFiles={courseFilesTotal}
+          totalEventReports={eventReportsTotal}
+          onCourseFilesPageChange={setCourseFilesPage}
+          onEventReportsPageChange={setEventReportsPage}
+          students={[]}
+          showStudents={false}
+          onViewFile={handleViewFile}
+          onViewReport={handleViewReport}
+          getStatusColor={getStatusColor}
+        />
+      )}
 
       {/* File View Dialog */}
       <FileViewDialog

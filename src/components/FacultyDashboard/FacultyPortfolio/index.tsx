@@ -13,6 +13,7 @@ import {
 } from "./types";
 import { Card, CardContent } from "../../ui/card";
 import { Badge } from "../../ui/badge";
+import { Skeleton } from "../../ui/skeleton";
 import { useAuth } from "@/context/AuthContext";
 
 function normalizeSemesterLabel(semester?: string) {
@@ -85,6 +86,7 @@ export function FacultyPortfolio({ faculty, onBack }: FacultyPortfolioProps) {
   const [eventReportsPage, setEventReportsPage] = useState(1);
   const [courseFilesTotal, setCourseFilesTotal] = useState(0);
   const [eventReportsTotal, setEventReportsTotal] = useState(0);
+  const [isPortfolioLoading, setIsPortfolioLoading] = useState(true);
   const [students, setStudents] = useState<Student[]>([]);
   const [messages, setMessages] = useState<
     {
@@ -150,6 +152,7 @@ export function FacultyPortfolio({ faculty, onBack }: FacultyPortfolioProps) {
     };
 
     const loadPortfolioData = async () => {
+      setIsPortfolioLoading(true);
       try {
         const portfolioPromise = (async () => {
           const portfolioResponse = await fetch(
@@ -233,6 +236,8 @@ export function FacultyPortfolio({ faculty, onBack }: FacultyPortfolioProps) {
         await Promise.all([portfolioPromise, studentsPromise, messagesPromise]);
       } catch (error) {
         console.error("Load faculty portfolio error:", error);
+      } finally {
+        setIsPortfolioLoading(false);
       }
     };
 
@@ -353,23 +358,35 @@ export function FacultyPortfolio({ faculty, onBack }: FacultyPortfolioProps) {
           </CardContent>
         </Card>
       )}
-      <PortfolioTabs
-        facultyId={faculty.id}
-        courseFiles={courseFiles}
-        eventReports={eventReports}
-        courseFilesPage={courseFilesPage}
-        eventReportsPage={eventReportsPage}
-        pageSize={pageSize}
-        totalCourseFiles={courseFilesTotal}
-        totalEventReports={eventReportsTotal}
-        onCourseFilesPageChange={setCourseFilesPage}
-        onEventReportsPageChange={setEventReportsPage}
-        students={students}
-        showStudents={showStudents}
-        onViewFile={handleViewFile}
-        onViewReport={handleViewReport}
-        getStatusColor={getStatusColor}
-      />
+      {isPortfolioLoading &&
+      courseFiles.length === 0 &&
+      eventReports.length === 0 ? (
+        <Card>
+          <CardContent className="pt-6 space-y-4">
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-24 w-full" />
+            <Skeleton className="h-24 w-full" />
+          </CardContent>
+        </Card>
+      ) : (
+        <PortfolioTabs
+          facultyId={faculty.id}
+          courseFiles={courseFiles}
+          eventReports={eventReports}
+          courseFilesPage={courseFilesPage}
+          eventReportsPage={eventReportsPage}
+          pageSize={pageSize}
+          totalCourseFiles={courseFilesTotal}
+          totalEventReports={eventReportsTotal}
+          onCourseFilesPageChange={setCourseFilesPage}
+          onEventReportsPageChange={setEventReportsPage}
+          students={students}
+          showStudents={showStudents}
+          onViewFile={handleViewFile}
+          onViewReport={handleViewReport}
+          getStatusColor={getStatusColor}
+        />
+      )}
 
       <FileViewDialog
         open={isFileViewOpen}
