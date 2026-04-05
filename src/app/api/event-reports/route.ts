@@ -6,6 +6,11 @@ import type { EventReport } from "@/components/EventReportManager/types";
 import { getAllUsers } from "@/lib/userStore";
 import type { UserRecord } from "@/lib/userStore";
 
+type EventReportWithFaculty = EventReport & {
+  facultyName?: string;
+  department?: string;
+};
+
 function parsePositiveInt(value: string | null, fallback: number) {
   if (!value) {
     return fallback;
@@ -127,6 +132,10 @@ export async function GET(request: NextRequest) {
   try {
     const db = await getMongoDb();
     await ensureNormalizedIndexes(db);
+    const reportsCollection = db.collection<EventReport>(
+      COLLECTIONS.eventReports,
+    );
+
     const searchParams = request.nextUrl.searchParams;
     const facultyId = String(searchParams.get("facultyId") || "").trim();
     const status = String(searchParams.get("status") || "")
@@ -142,10 +151,13 @@ export async function GET(request: NextRequest) {
     const offset = parsePositiveInt(searchParams.get("offset"), 0);
     const includeMeta = toBooleanFlag(searchParams.get("includeMeta"), true);
 
-    const users = await getAllUsers();
-    const requestedFacultyUser = facultyId
-      ? resolveUserByAnyIdentity(users, facultyId)
-      : null;
+    let users: UserRecord[] = [];
+    let requestedFacultyUser: UserRecord | null = null;
+    if (facultyId) {
+      users = await getAllUsers();
+      requestedFacultyUser = resolveUserByAnyIdentity(users, facultyId);
+    }
+
     const facultyIdentitySet = requestedFacultyUser
       ? buildUserIdentitySet({
           id: requestedFacultyUser.id,
@@ -175,11 +187,86 @@ export async function GET(request: NextRequest) {
       query.community = new RegExp(`^${community}$`, "i");
     }
 
-    const reports = (await db
-      .collection<EventReport>(COLLECTIONS.eventReports)
+    // Fast path for faculty dashboard loads (no search text): let MongoDB filter/paginate.
+    if (!search) {
+      const total = await reportsCollection.countDocuments(query);
+
+      let cursor = reportsCollection.find(query).sort({ createdAt: -1 });
+      if (offset > 0) {
+        cursor = cursor.skip(offset);
+      }
+      if (limit > 0) {
+        cursor = cursor.limit(limit);
+      }
+
+      const pagedReports = (await cursor.toArray()) as EventReportWithFaculty[];
+
+      // Most records now store facultyName/department at write-time.
+      // Only enrich when fields are missing.
+      const needsEnrichment = pagedReports.some(
+        (report) => !report.facultyName || !report.department,
+      );
+
+      let reportsWithFaculty = pagedReports as EventReportWithFaculty[];
+
+      if (needsEnrichment) {
+        if (users.length === 0) {
+          users = await getAllUsers();
+        }
+
+        const userByIdentity = new Map<string, UserRecord>();
+        for (const user of users) {
+          const identities = buildUserIdentitySet({
+            id: user.id,
+            username: user.username,
+            email: user.email,
+            firebaseUid: user.firebaseUid,
+          });
+          identities.forEach((identity) => {
+            userByIdentity.set(identity, user);
+          });
+        }
+
+        reportsWithFaculty = pagedReports.map((report) => {
+          const facultyUser = userByIdentity.get(
+            normalizeIdentity(report.facultyId),
+          );
+          return {
+            ...report,
+            facultyName: report.facultyName || facultyUser?.name,
+            department: report.department || facultyUser?.department,
+          };
+        });
+      }
+
+      if (!includeMeta) {
+        return NextResponse.json({
+          reports: reportsWithFaculty,
+          total,
+          offset,
+          limit,
+        });
+      }
+
+      const communities = (await reportsCollection.distinct("community"))
+        .filter((value): value is string => typeof value === "string")
+        .map((value) => value.trim())
+        .filter(Boolean)
+        .sort((a, b) => a.localeCompare(b));
+
+      return NextResponse.json({
+        reports: reportsWithFaculty,
+        communities,
+        total,
+        offset,
+        limit,
+      });
+    }
+
+    const reports = (await reportsCollection
       .find(query)
       .sort({ createdAt: -1 })
-      .toArray()) as EventReport[];
+      .toArray()) as EventReportWithFaculty[];
     const filteredReports = reports.filter((report) => {
       if (facultyId) {
         const reportFacultyIdentity = normalizeIdentity(report.facultyId);
@@ -227,6 +314,10 @@ export async function GET(request: NextRequest) {
         ? filteredReports.slice(offset, offset + limit)
         : filteredReports.slice(offset);
 
+    if (users.length === 0) {
+      users = await getAllUsers();
+    }
+
     const userByIdentity = new Map<string, (typeof users)[number]>();
     for (const user of users) {
       const identities = buildUserIdentitySet({
@@ -260,11 +351,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const communities = (
-      await db
-        .collection<EventReport>(COLLECTIONS.eventReports)
-        .distinct("community")
-    )
+    const communities = (await reportsCollection.distinct("community"))
       .filter((value): value is string => typeof value === "string")
       .map((value) => value.trim())
       .filter(Boolean)
