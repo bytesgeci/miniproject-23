@@ -12,7 +12,22 @@ interface FacultyProfilePageProps {
   params: Promise<{ id: string }>;
 }
 
-export const revalidate = 30;
+// Disable caching to always show fresh data when files are uploaded
+export const revalidate = 0;
+
+// Helper to normalize IDs for matching (handles ObjectId and string formats)
+function normalizeIdForMatching(id: string): string[] {
+  const normalized = String(id || "").trim();
+  if (!normalized) return [];
+
+  // Return multiple potential formats the ID could be stored as
+  return [
+    normalized,
+    normalized.toLowerCase(),
+    // Also try removing/adding quotes if it looks like serialized ObjectId
+    normalized.replace(/^ObjectId\("/, "").replace(/"\)$/, ""),
+  ].filter((v, i, arr) => arr.indexOf(v) === i);
+}
 
 export default async function FacultyProfilePage({
   params,
@@ -50,17 +65,27 @@ export default async function FacultyProfilePage({
   };
 
   // Get course files for this faculty
+  // Use improved ID matching to handle format mismatches
+  const normalizedFacultyIds = normalizeIdForMatching(faculty.id);
   const allCourseFiles = await readJsonFile<CourseFile[]>("courseFiles.json");
-  const courseFiles = allCourseFiles.filter(
-    (file) => file.facultyId === faculty.id,
-  );
+  const courseFiles = allCourseFiles.filter((file) => {
+    if (!file?.facultyId) return false;
+    const normalizedFileIds = normalizeIdForMatching(String(file.facultyId));
+    return normalizedFileIds.some((fid) => normalizedFacultyIds.includes(fid));
+  });
 
   // Get event reports for this faculty
   const allEventReports =
     await readJsonFile<EventReport[]>("eventReports.json");
-  const eventReports = allEventReports.filter(
-    (report) => report.facultyId === faculty.id,
-  );
+  const eventReports = allEventReports.filter((report) => {
+    if (!report?.facultyId) return false;
+    const normalizedReportIds = normalizeIdForMatching(
+      String(report.facultyId),
+    );
+    return normalizedReportIds.some((rid) =>
+      normalizedFacultyIds.includes(rid),
+    );
+  });
 
   return (
     <main className="min-h-screen bg-linear-to-b from-slate-50 to-white">

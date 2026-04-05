@@ -149,11 +149,40 @@ function formatTimeAgo(timestamp?: string | null) {
   return `${diffDays}d ago`;
 }
 
-async function buildLocalFacultyCourseFileStats(facultyId: string) {
+// Helper to normalize IDs for matching (handles ObjectId and string formats)
+function normalizeIdForMatching(id: string): string[] {
+  const normalized = String(id || "").trim();
+  if (!normalized) return [];
+
+  // Return multiple potential formats the ID could be stored as
+  return [
+    normalized,
+    normalized.toLowerCase(),
+    // Also try removing/adding quotes if it looks like serialized ObjectId
+    normalized.replace(/^ObjectId\("/, "").replace(/"\)$/, ""),
+  ].filter((v, i, arr) => arr.indexOf(v) === i);
+}
+
+async function buildLocalFacultyCourseFileStats(
+  facultyId: string,
+  userId: string = facultyId,
+) {
   const files = await readJsonFile<LocalCourseFileRecord[]>("courseFiles.json");
-  const facultyFiles = (files || []).filter(
-    (file) => String(file?.facultyId || "").trim() === facultyId,
-  );
+
+  // Try multiple matching strategies to handle ID format mismatches
+  const normalizedFacultyIds = normalizeIdForMatching(facultyId);
+  const normalizedUserIds = normalizeIdForMatching(userId);
+  const allMatchingIds = [...normalizedFacultyIds, ...normalizedUserIds];
+
+  const facultyFiles = (files || []).filter((file) => {
+    if (!file) return false;
+    const fileId = String(file?.facultyId || "").trim();
+    if (!fileId) return false;
+
+    const normalizedFileId = normalizeIdForMatching(fileId);
+    // Match if any normalized variant matches
+    return normalizedFileId.some((fid) => allMatchingIds.includes(fid));
+  });
 
   const pendingFiles = facultyFiles.filter((file) => {
     const status = normalizeAuditStatus(file?.status);
@@ -186,6 +215,13 @@ async function buildLocalFacultyDashboardData(
 ): Promise<FacultyDashboardData> {
   const normalizedUsername = normalizeIdentity(username);
   const users = await getAllUsers();
+
+  // Store a mapping of serialized ID to original user for ID matching
+  const userIdMap = new Map<
+    string,
+    { serializedId: string; originalUser: (typeof users)[0] }
+  >();
+
   const facultyMembers = users
     .filter((user) => {
       const primaryRole = normalizeRoleInput(user.role);
@@ -204,8 +240,11 @@ async function buildLocalFacultyDashboardData(
             .filter(Boolean) as string[])
         : [];
 
+      const serializedId = serializeId(user.id);
+      userIdMap.set(serializedId, { serializedId, originalUser: user });
+
       return {
-        id: serializeId(user.id),
+        id: serializedId,
         username: String(user.username || ""),
         name: String(user.name || user.username || "Faculty"),
         department: String(user.department || ""),
@@ -243,14 +282,33 @@ async function buildLocalFacultyDashboardData(
   });
 
   if (selectedUser) {
+    // Get the original user to access the raw ID
+    const userInfo = userIdMap.get(selectedUser.id);
+    const originalUserId = userInfo?.originalUser?.id
+      ? String(userInfo.originalUser.id)
+      : selectedUser.id;
+
     const [localCourseStats, eventReports] = await Promise.all([
-      buildLocalFacultyCourseFileStats(selectedUser.id),
+      buildLocalFacultyCourseFileStats(selectedUser.id, originalUserId),
       readJsonFile<LocalEventReportRecord[]>("eventReports.json"),
     ]);
 
-    const facultyReports = (eventReports || []).filter(
-      (report) => String(report?.facultyId || "").trim() === selectedUser.id,
-    );
+    // Filter reports with improved ID matching
+    const normalizedSelectedIds = [
+      ...normalizeIdForMatching(selectedUser.id),
+      ...normalizeIdForMatching(originalUserId),
+    ];
+
+    const facultyReports = (eventReports || []).filter((report) => {
+      if (!report?.facultyId) return false;
+      const reportFacultyId = String(report.facultyId).trim();
+      if (!reportFacultyId) return false;
+
+      const normalizedReportIds = normalizeIdForMatching(reportFacultyId);
+      return normalizedReportIds.some((rid) =>
+        normalizedSelectedIds.includes(rid),
+      );
+    });
 
     stats.totalFiles = localCourseStats.totalFiles;
     stats.totalReports = facultyReports.length;
