@@ -38,6 +38,9 @@ export async function ensureNormalizedIndexes(db: Db) {
     db
       .collection(COLLECTIONS.eventReports)
       .createIndex({ facultyId: 1, eventDate: -1 }),
+    db
+      .collection(COLLECTIONS.eventReports)
+      .createIndex({ facultyId: 1, createdAt: -1 }),
     db.collection(COLLECTIONS.eventReports).createIndex({ status: 1 }),
     db.collection(COLLECTIONS.audits).createIndex({ id: 1 }, { unique: true }),
     db

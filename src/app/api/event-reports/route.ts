@@ -73,7 +73,12 @@ function resolveUserByAnyIdentity(users: UserRecord[], value: unknown) {
 export async function POST(request: NextRequest) {
   try {
     const db = await getMongoDb();
-    await ensureNormalizedIndexes(db);
+    // Avoid blocking user-facing writes on index checks.
+    void ensureNormalizedIndexes(db).catch((error) => {
+      console.warn("Background index ensure failed for event-reports POST", {
+        message: error instanceof Error ? error.message : String(error),
+      });
+    });
     const payload = await request.json();
     const users = await getAllUsers();
     const facultyUser = resolveUserByAnyIdentity(users, payload.facultyId);
@@ -131,7 +136,12 @@ export async function POST(request: NextRequest) {
 export async function GET(request: NextRequest) {
   try {
     const db = await getMongoDb();
-    await ensureNormalizedIndexes(db);
+    // Keep reads fast on cold starts; ensure indexes in background.
+    void ensureNormalizedIndexes(db).catch((error) => {
+      console.warn("Background index ensure failed for event-reports GET", {
+        message: error instanceof Error ? error.message : String(error),
+      });
+    });
     const reportsCollection = db.collection<EventReport>(
       COLLECTIONS.eventReports,
     );
