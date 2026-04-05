@@ -4,6 +4,8 @@ import { COLLECTIONS, ensureNormalizedIndexes } from "@/lib/mongoNormalized";
 import type { Student } from "@/components/StaffAdvisorDashboard/types";
 import { resolveStaffAdvisorScope } from "@/lib/staffAdvisorScope";
 import { isValidBatchYear, normalizeBatchYear } from "@/lib/batchYear";
+import { apiCache } from "@/lib/apiCache";
+import { clearDashboardCache } from "@/lib/dashboardData";
 
 const VALID_SEMESTERS = new Set([
   "S1",
@@ -113,6 +115,10 @@ export async function PATCH(
     await db
       .collection<Student>(COLLECTIONS.students)
       .updateOne({ id }, { $set: nextStudent });
+
+    apiCache.clear(`students:${advisorScope.advisorId}`);
+    clearDashboardCache();
+
     return NextResponse.json({ student: nextStudent });
   } catch (error) {
     console.error("Student update error:", error);
@@ -152,6 +158,10 @@ export async function DELETE(
     await db
       .collection<Student>(COLLECTIONS.students)
       .deleteOne({ id, advisorId: advisorScope.advisorId });
+
+    apiCache.clear(`students:${advisorScope.advisorId}`);
+    clearDashboardCache();
+
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Student delete error:", error);

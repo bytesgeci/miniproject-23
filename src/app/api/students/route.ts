@@ -6,6 +6,7 @@ import type { Student } from "@/components/StaffAdvisorDashboard/types";
 import { resolveStaffAdvisorScope } from "@/lib/staffAdvisorScope";
 import { isValidBatchYear, normalizeBatchYear } from "@/lib/batchYear";
 import { createCachedResponse, apiCache } from "@/lib/apiCache";
+import { clearDashboardCache } from "@/lib/dashboardData";
 
 const VALID_SEMESTERS = new Set([
   "S1",
@@ -151,6 +152,10 @@ export async function POST(request: NextRequest) {
         Student & { createdAt?: string; updatedAt?: string }
       >(COLLECTIONS.students)
       .insertOne(newStudent);
+
+    // Prevent stale student/dashboard responses after mutations.
+    apiCache.clear(`students:${advisorScope.advisorId}`);
+    clearDashboardCache();
 
     const scopedStudents = (await db
       .collection<Student>(COLLECTIONS.students)
