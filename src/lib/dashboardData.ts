@@ -163,16 +163,28 @@ function normalizeIdForMatching(id: string): string[] {
   ].filter((v, i, arr) => arr.indexOf(v) === i);
 }
 
+function buildUserIdentityCandidates(user: {
+  id?: string;
+  username?: string;
+  email?: string;
+  firebaseUid?: string;
+}) {
+  const values = [user.id, user.username, user.email, user.firebaseUid];
+  const candidates = new Set<string>();
+
+  values.forEach((value) => {
+    const normalized = normalizeIdentity(value);
+    if (!normalized) return;
+    normalizeIdForMatching(normalized).forEach((item) => candidates.add(item));
+  });
+
+  return candidates;
+}
+
 async function buildLocalFacultyCourseFileStats(
-  facultyId: string,
-  userId: string = facultyId,
+  identityCandidates: Set<string>,
 ) {
   const files = await readJsonFile<LocalCourseFileRecord[]>("courseFiles.json");
-
-  // Try multiple matching strategies to handle ID format mismatches
-  const normalizedFacultyIds = normalizeIdForMatching(facultyId);
-  const normalizedUserIds = normalizeIdForMatching(userId);
-  const allMatchingIds = [...normalizedFacultyIds, ...normalizedUserIds];
 
   const facultyFiles = (files || []).filter((file) => {
     if (!file) return false;
@@ -180,8 +192,7 @@ async function buildLocalFacultyCourseFileStats(
     if (!fileId) return false;
 
     const normalizedFileId = normalizeIdForMatching(fileId);
-    // Match if any normalized variant matches
-    return normalizedFileId.some((fid) => allMatchingIds.includes(fid));
+    return normalizedFileId.some((fid) => identityCandidates.has(fid));
   });
 
   const pendingFiles = facultyFiles.filter((file) => {
@@ -284,20 +295,19 @@ async function buildLocalFacultyDashboardData(
   if (selectedUser) {
     // Get the original user to access the raw ID
     const userInfo = userIdMap.get(selectedUser.id);
-    const originalUserId = userInfo?.originalUser?.id
-      ? String(userInfo.originalUser.id)
-      : selectedUser.id;
+    const originalUser = userInfo?.originalUser;
+
+    const identityCandidates = buildUserIdentityCandidates({
+      id: String(originalUser?.id ?? selectedUser.id),
+      username: String(originalUser?.username ?? selectedUser.username ?? ""),
+      email: String(originalUser?.email ?? selectedUser.email ?? ""),
+      firebaseUid: String(originalUser?.firebaseUid ?? ""),
+    });
 
     const [localCourseStats, eventReports] = await Promise.all([
-      buildLocalFacultyCourseFileStats(selectedUser.id, originalUserId),
+      buildLocalFacultyCourseFileStats(identityCandidates),
       readJsonFile<LocalEventReportRecord[]>("eventReports.json"),
     ]);
-
-    // Filter reports with improved ID matching
-    const normalizedSelectedIds = [
-      ...normalizeIdForMatching(selectedUser.id),
-      ...normalizeIdForMatching(originalUserId),
-    ];
 
     const facultyReports = (eventReports || []).filter((report) => {
       if (!report?.facultyId) return false;
@@ -305,9 +315,7 @@ async function buildLocalFacultyDashboardData(
       if (!reportFacultyId) return false;
 
       const normalizedReportIds = normalizeIdForMatching(reportFacultyId);
-      return normalizedReportIds.some((rid) =>
-        normalizedSelectedIds.includes(rid),
-      );
+      return normalizedReportIds.some((rid) => identityCandidates.has(rid));
     });
 
     stats.totalFiles = localCourseStats.totalFiles;
@@ -529,9 +537,13 @@ export async function getFacultyDashboardData(
         }
 
         try {
-          const localCourseStats = await buildLocalFacultyCourseFileStats(
-            selectedUser.id,
-          );
+          const identityCandidates = buildUserIdentityCandidates({
+            id: String(selectedUser.id ?? ""),
+            username: String(selectedUser.username ?? ""),
+            email: String(selectedUser.email ?? ""),
+          });
+          const localCourseStats =
+            await buildLocalFacultyCourseFileStats(identityCandidates);
           stats.totalFiles = localCourseStats.totalFiles;
           stats.pendingReports = localCourseStats.pendingFiles;
           if (localCourseStats.recentActivity.length > 0) {

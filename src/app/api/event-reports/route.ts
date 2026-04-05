@@ -23,18 +23,65 @@ function toBooleanFlag(value: string | null, fallback: boolean) {
   return value !== "0" && value.toLowerCase() !== "false";
 }
 
+function normalizeIdentity(value: unknown) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase();
+}
+
+function buildUserIdentitySet(user: {
+  id?: string;
+  username?: string;
+  email?: string;
+  firebaseUid?: string;
+}) {
+  const identities = new Set<string>();
+  [user.id, user.username, user.email, user.firebaseUid].forEach((value) => {
+    const normalized = normalizeIdentity(value);
+    if (normalized) {
+      identities.add(normalized);
+    }
+  });
+  return identities;
+}
+
+function resolveUserByAnyIdentity(
+  users: Array<Record<string, unknown>>,
+  value: unknown,
+) {
+  const lookup = normalizeIdentity(value);
+  if (!lookup) {
+    return null;
+  }
+
+  return (
+    users.find((user) => {
+      const identities = buildUserIdentitySet({
+        id: String(user.id ?? ""),
+        username: String(user.username ?? ""),
+        email: String(user.email ?? ""),
+        firebaseUid: String(user.firebaseUid ?? ""),
+      });
+      return identities.has(lookup);
+    }) ?? null
+  );
+}
+
 export async function POST(request: NextRequest) {
   try {
     const db = await getMongoDb();
     await ensureNormalizedIndexes(db);
     const payload = await request.json();
     const users = await getAllUsers();
-    const facultyUser = users.find((user) => user.id === payload.facultyId);
+    const facultyUser = resolveUserByAnyIdentity(users, payload.facultyId);
+    const canonicalFacultyId = String(
+      facultyUser?.id ?? payload.facultyId ?? "",
+    ).trim();
     const timestamp = new Date().toISOString();
 
     const newReport: EventReport & { facultyName?: string } = {
       id: randomUUID(),
-      facultyId: payload.facultyId,
+      facultyId: canonicalFacultyId,
       eventName: payload.eventName,
       community: payload.community,
       eventDate: payload.eventDate,
@@ -97,9 +144,31 @@ export async function GET(request: NextRequest) {
     const offset = parsePositiveInt(searchParams.get("offset"), 0);
     const includeMeta = toBooleanFlag(searchParams.get("includeMeta"), true);
 
+    const users = await getAllUsers();
+    const requestedFacultyUser = facultyId
+      ? resolveUserByAnyIdentity(users, facultyId)
+      : null;
+    const facultyIdentitySet = requestedFacultyUser
+      ? buildUserIdentitySet({
+          id: String(requestedFacultyUser.id ?? ""),
+          username: String(requestedFacultyUser.username ?? ""),
+          email: String(requestedFacultyUser.email ?? ""),
+          firebaseUid: String(requestedFacultyUser.firebaseUid ?? ""),
+        })
+      : new Set<string>();
+
+    if (!requestedFacultyUser && facultyId) {
+      const normalizedRequested = normalizeIdentity(facultyId);
+      if (normalizedRequested) {
+        facultyIdentitySet.add(normalizedRequested);
+      }
+    }
+
     const query: Record<string, unknown> = {};
     if (facultyId) {
-      query.facultyId = facultyId;
+      query.facultyId = {
+        $in: Array.from(facultyIdentitySet),
+      };
     }
     if (status) {
       query.status = new RegExp(`^${status}$`, "i");
@@ -113,10 +182,15 @@ export async function GET(request: NextRequest) {
       .find(query)
       .sort({ createdAt: -1 })
       .toArray()) as EventReport[];
-    const users = await getAllUsers();
     const filteredReports = reports.filter((report) => {
-      if (facultyId && String(report.facultyId || "") !== facultyId) {
-        return false;
+      if (facultyId) {
+        const reportFacultyIdentity = normalizeIdentity(report.facultyId);
+        if (
+          !reportFacultyIdentity ||
+          !facultyIdentitySet.has(reportFacultyIdentity)
+        ) {
+          return false;
+        }
       }
 
       if (status && String(report.status || "").toLowerCase() !== status) {
@@ -155,9 +229,23 @@ export async function GET(request: NextRequest) {
         ? filteredReports.slice(offset, offset + limit)
         : filteredReports.slice(offset);
 
-    const userById = new Map(users.map((user) => [user.id, user]));
+    const userByIdentity = new Map<string, (typeof users)[number]>();
+    for (const user of users) {
+      const identities = buildUserIdentitySet({
+        id: String(user.id ?? ""),
+        username: String(user.username ?? ""),
+        email: String(user.email ?? ""),
+        firebaseUid: String(user.firebaseUid ?? ""),
+      });
+      identities.forEach((identity) => {
+        userByIdentity.set(identity, user);
+      });
+    }
+
     const reportsWithFaculty = pagedReports.map((report) => {
-      const facultyUser = userById.get(String(report.facultyId || ""));
+      const facultyUser = userByIdentity.get(
+        normalizeIdentity(report.facultyId),
+      );
       return {
         ...report,
         facultyName: facultyUser?.name,

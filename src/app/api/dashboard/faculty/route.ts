@@ -17,10 +17,7 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  const cacheControl =
-    process.env.NODE_ENV === "production"
-      ? "private, max-age=20, stale-while-revalidate=60"
-      : "no-store";
+  const cacheControl = "no-store";
 
   return NextResponse.json(data, {
     headers: buildTimingResponseHeaders(

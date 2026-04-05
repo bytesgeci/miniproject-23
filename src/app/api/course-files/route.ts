@@ -32,6 +32,50 @@ function toBooleanFlag(value: string | null, fallback: boolean) {
   return value !== "0" && value.toLowerCase() !== "false";
 }
 
+function normalizeIdentity(value: unknown) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase();
+}
+
+function buildUserIdentitySet(user: {
+  id?: string;
+  username?: string;
+  email?: string;
+  firebaseUid?: string;
+}) {
+  const identities = new Set<string>();
+  [user.id, user.username, user.email, user.firebaseUid].forEach((value) => {
+    const normalized = normalizeIdentity(value);
+    if (normalized) {
+      identities.add(normalized);
+    }
+  });
+  return identities;
+}
+
+function resolveUserByAnyIdentity(
+  users: Array<Record<string, unknown>>,
+  value: unknown,
+) {
+  const lookup = normalizeIdentity(value);
+  if (!lookup) {
+    return null;
+  }
+
+  return (
+    users.find((user) => {
+      const identities = buildUserIdentitySet({
+        id: String(user.id ?? ""),
+        username: String(user.username ?? ""),
+        email: String(user.email ?? ""),
+        firebaseUid: String(user.firebaseUid ?? ""),
+      });
+      return identities.has(lookup);
+    }) ?? null
+  );
+}
+
 function estimateDataUrlBytes(dataUrl: string) {
   const commaIndex = dataUrl.indexOf(",");
   if (commaIndex === -1) {
@@ -80,7 +124,18 @@ export async function POST(request: NextRequest) {
 
     const files = await readJsonFile<CourseFile[]>("courseFiles.json");
     const users = await getAllUsers();
-    const facultyUser = users.find((user) => user.id === payload.facultyId);
+    const facultyUser = resolveUserByAnyIdentity(users, payload.facultyId);
+    const canonicalFacultyId = String(
+      facultyUser?.id ?? payload.facultyId ?? "",
+    ).trim();
+    const facultyIdentitySet = facultyUser
+      ? buildUserIdentitySet({
+          id: String(facultyUser.id ?? ""),
+          username: String(facultyUser.username ?? ""),
+          email: String(facultyUser.email ?? ""),
+          firebaseUid: String(facultyUser.firebaseUid ?? ""),
+        })
+      : new Set([normalizeIdentity(payload.facultyId)]);
     const timestamp = new Date().toISOString();
 
     // Validate and keep data URL; persisted via Mongo-backed jsonDb writer.
@@ -121,7 +176,7 @@ export async function POST(request: NextRequest) {
 
     const newFile: CourseFile = {
       id: Date.now().toString(),
-      facultyId: payload.facultyId,
+      facultyId: canonicalFacultyId,
       fileName: payload.fileName,
       documentUrl: documentUrl,
       courseCode: payload.courseCode,
@@ -141,7 +196,7 @@ export async function POST(request: NextRequest) {
     // Check for a duplicate: same facultyId + courseCode + fileType + academicYear
     const duplicateIndex = files.findIndex(
       (f) =>
-        f.facultyId === payload.facultyId &&
+        facultyIdentitySet.has(normalizeIdentity(f.facultyId)) &&
         f.courseCode === payload.courseCode &&
         f.fileType === payload.fileType &&
         normalizeBatchYear(f.academicYear) === academicYear,
@@ -195,10 +250,12 @@ export async function POST(request: NextRequest) {
     }
 
     // Recompute engagement after file upload
-    if (payload.facultyId) {
+    if (canonicalFacultyId) {
       try {
-        console.log(`Recomputing engagement for faculty: ${payload.facultyId}`);
-        await recomputeEngagementForFaculty(payload.facultyId);
+        console.log(
+          `Recomputing engagement for faculty: ${canonicalFacultyId}`,
+        );
+        await recomputeEngagementForFaculty(canonicalFacultyId);
         console.log("Engagement recomputed successfully");
       } catch (error) {
         console.error("Error recomputing engagement:", error);
@@ -249,10 +306,36 @@ export async function GET(request: NextRequest) {
     const files = await readJsonFile<CourseFile[]>("courseFiles.json");
     readDurationMs += Date.now() - readStart;
 
+    const users = await getAllUsers();
+    const requestedFacultyUser = facultyId
+      ? resolveUserByAnyIdentity(users, facultyId)
+      : null;
+    const facultyIdentitySet = requestedFacultyUser
+      ? buildUserIdentitySet({
+          id: String(requestedFacultyUser.id ?? ""),
+          username: String(requestedFacultyUser.username ?? ""),
+          email: String(requestedFacultyUser.email ?? ""),
+          firebaseUid: String(requestedFacultyUser.firebaseUid ?? ""),
+        })
+      : new Set<string>();
+
+    if (!requestedFacultyUser && facultyId) {
+      const normalizedRequested = normalizeIdentity(facultyId);
+      if (normalizedRequested) {
+        facultyIdentitySet.add(normalizedRequested);
+      }
+    }
+
     const filterStart = Date.now();
     const filteredFiles = files.filter((file) => {
-      if (facultyId && file.facultyId !== facultyId) {
-        return false;
+      if (facultyId) {
+        const fileFacultyIdentity = normalizeIdentity(file.facultyId);
+        if (
+          !fileFacultyIdentity ||
+          !facultyIdentitySet.has(fileFacultyIdentity)
+        ) {
+          return false;
+        }
       }
 
       if (status && String(file.status || "") !== status) {
@@ -311,12 +394,22 @@ export async function GET(request: NextRequest) {
     let filesWithFaculty = pagedFiles;
     if (includeFaculty) {
       const joinStart = Date.now();
-      const users = await getAllUsers();
-      const userById = new Map(users.map((user) => [user.id, user]));
+      const userByIdentity = new Map<string, (typeof users)[number]>();
+      for (const user of users) {
+        const identities = buildUserIdentitySet({
+          id: String(user.id ?? ""),
+          username: String(user.username ?? ""),
+          email: String(user.email ?? ""),
+          firebaseUid: String(user.firebaseUid ?? ""),
+        });
+        identities.forEach((identity) => {
+          userByIdentity.set(identity, user);
+        });
+      }
 
       filesWithFaculty = pagedFiles.map((file) => {
         const facultyUser = file.facultyId
-          ? userById.get(String(file.facultyId))
+          ? userByIdentity.get(normalizeIdentity(file.facultyId))
           : null;
         return {
           ...file,
