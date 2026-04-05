@@ -14,22 +14,8 @@ export default async function UserStudentsPage() {
     getUserSectionCounts(),
   ]);
 
-  const latestBatch = sectionCounts.studentsCount
-    ? students
-        .map((student) => String(student.batchYear || "").trim())
-        .filter((batch) => Boolean(batch))
-        .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))[0]
-    : "";
-
-  const activeBatchYear = String(latestBatch || "").trim();
-  const scopedStudents = activeBatchYear
-    ? students.filter(
-        (student) => String(student.batchYear || "").trim() === activeBatchYear,
-      )
-    : students;
-
   const batchGroups: UserStudentBatchGroup[] = Object.entries(
-    scopedStudents.reduce<Record<string, UserStudentRecord[]>>(
+    students.reduce<Record<string, UserStudentRecord[]>>(
       (accumulator, student) => {
         const batch = String(student.batchYear || "Unknown Batch").trim();
         if (!accumulator[batch]) {
