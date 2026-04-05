@@ -176,7 +176,7 @@ export function FacultyPortfolio({ faculty, onBack }: FacultyPortfolioProps) {
 
         const reportsPromise = (async () => {
           const reportsResponse = await fetch(
-            `/api/event-reports?facultyId=${encodeURIComponent(faculty.id)}&limit=${pageSize}&offset=${(eventReportsPage - 1) * pageSize}&includeMeta=0&includeFaculty=0`,
+            `/api/event-reports?facultyId=${encodeURIComponent(faculty.id)}&limit=${pageSize}&offset=${(eventReportsPage - 1) * pageSize}&includeMeta=0&includeFaculty=0&fields=facultyId,eventName,eventType,eventDate,location,participants,duration,status,facultyCoordinator,community,department,description,objectives,outcomes`,
           );
           const reportsData = await reportsResponse.json();
           if (!reportsResponse.ok) {
@@ -293,9 +293,21 @@ export function FacultyPortfolio({ faculty, onBack }: FacultyPortfolioProps) {
     setIsFileViewOpen(true);
   };
 
-  const handleViewReport = (report: EventReport) => {
+  const handleViewReport = async (report: EventReport) => {
     setSelectedReport(report);
     setIsReportViewOpen(true);
+
+    try {
+      const response = await fetch(`/api/event-reports/${report.id}`, {
+        cache: "no-store",
+      });
+      const data = await response.json();
+      if (response.ok && data?.report) {
+        setSelectedReport(data.report as EventReport);
+      }
+    } catch (error) {
+      console.error("Load full event report error:", error);
+    }
   };
 
   return (

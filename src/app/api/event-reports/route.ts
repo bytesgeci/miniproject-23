@@ -5,6 +5,7 @@ import type { EventReport } from "@/components/EventReportManager/types";
 import { getAllUsers } from "@/lib/userStore";
 import type { UserRecord } from "@/lib/userStore";
 import { recomputeEngagementForFaculty } from "@/lib/engagements";
+import { buildTimingResponseHeaders } from "@/lib/serverTiming";
 
 type EventReportWithFaculty = EventReport & {
   facultyName?: string;
@@ -133,9 +134,21 @@ export async function POST(request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
+  const requestStart = Date.now();
+  let readDurationMs = 0;
+  let primaryFilterDurationMs = 0;
+  let identityFallbackDurationMs = 0;
+  let sortDurationMs = 0;
+  let paginationDurationMs = 0;
+  let projectionDurationMs = 0;
+  let enrichDurationMs = 0;
+  let metaDurationMs = 0;
+
   try {
+    const readStart = Date.now();
     const reports =
       await readJsonFile<EventReportWithFaculty[]>("eventReports.json");
+    readDurationMs = Date.now() - readStart;
 
     const searchParams = request.nextUrl.searchParams;
     const facultyId = String(searchParams.get("facultyId") || "").trim();
@@ -150,6 +163,10 @@ export async function GET(request: NextRequest) {
       .toLowerCase();
     const limit = parsePositiveInt(searchParams.get("limit"), 0);
     const offset = parsePositiveInt(searchParams.get("offset"), 0);
+    const requestedFields = String(searchParams.get("fields") || "")
+      .split(",")
+      .map((field) => field.trim())
+      .filter(Boolean);
     const includeMeta = toBooleanFlag(searchParams.get("includeMeta"), true);
     const includeFaculty = toBooleanFlag(
       searchParams.get("includeFaculty"),
@@ -160,6 +177,7 @@ export async function GET(request: NextRequest) {
     const facultyIdentitySet = new Set<string>();
 
     // Fast path: direct facultyId filtering first, like course-files route.
+    const primaryFilterStart = Date.now();
     let filteredReports = (reports || []).filter((report) => {
       if (facultyId && String(report.facultyId || "").trim() !== facultyId) {
         return false;
@@ -197,9 +215,11 @@ export async function GET(request: NextRequest) {
 
       return haystack.includes(search);
     });
+    primaryFilterDurationMs = Date.now() - primaryFilterStart;
 
     // Identity fallback only if a faculty filter was given and direct match is empty.
     if (facultyId && filteredReports.length === 0) {
+      const identityFallbackStart = Date.now();
       users = await getAllUsers();
       const requestedFacultyUser = resolveUserByAnyIdentity(users, facultyId);
 
@@ -262,22 +282,48 @@ export async function GET(request: NextRequest) {
 
         return haystack.includes(search);
       });
+      identityFallbackDurationMs = Date.now() - identityFallbackStart;
     }
 
+    const sortStart = Date.now();
     const sortedReports = filteredReports.slice().sort((a, b) => {
       const aTime = new Date(a.createdAt || a.eventDate || 0).getTime();
       const bTime = new Date(b.createdAt || b.eventDate || 0).getTime();
       return bTime - aTime;
     });
+    sortDurationMs = Date.now() - sortStart;
 
+    const paginationStart = Date.now();
     const pagedReports =
       limit > 0
         ? sortedReports.slice(offset, offset + limit)
         : sortedReports.slice(offset);
+    paginationDurationMs = Date.now() - paginationStart;
 
-    let reportsWithFaculty = pagedReports;
+    const hasFieldProjection = requestedFields.length > 0;
+    const projectionFields = hasFieldProjection
+      ? new Set(["id", ...requestedFields])
+      : null;
+
+    const projectionStart = Date.now();
+    const projectedReports = hasFieldProjection
+      ? pagedReports.map((report) => {
+          const projected: Record<string, unknown> = {};
+          projectionFields?.forEach((field) => {
+            const key = field as keyof EventReportWithFaculty;
+            if (key in report) {
+              projected[key] = report[key];
+            }
+          });
+          return projected as unknown as EventReportWithFaculty;
+        })
+      : pagedReports;
+    projectionDurationMs = Date.now() - projectionStart;
+
+    let reportsWithFaculty = projectedReports;
     if (includeFaculty) {
-      const needsEnrichment = pagedReports.some(
+      const enrichStart = Date.now();
+      const needsEnrichment = reportsWithFaculty.some(
         (report) => !report.facultyName || !report.department,
       );
 
@@ -299,7 +345,7 @@ export async function GET(request: NextRequest) {
           });
         }
 
-        reportsWithFaculty = pagedReports.map((report) => {
+        reportsWithFaculty = reportsWithFaculty.map((report) => {
           const facultyUser = userByIdentity.get(
             normalizeIdentity(report.facultyId),
           );
@@ -310,17 +356,35 @@ export async function GET(request: NextRequest) {
           };
         });
       }
+      enrichDurationMs = Date.now() - enrichStart;
     }
+
+    const totalDurationWithoutMetaMs = Date.now() - requestStart;
 
     if (!includeMeta) {
-      return NextResponse.json({
-        reports: reportsWithFaculty,
-        total: sortedReports.length,
-        offset,
-        limit,
-      });
+      return NextResponse.json(
+        {
+          reports: reportsWithFaculty,
+          total: sortedReports.length,
+          offset,
+          limit,
+        },
+        {
+          headers: buildTimingResponseHeaders([
+            { name: "read", durationMs: readDurationMs },
+            { name: "filter", durationMs: primaryFilterDurationMs },
+            { name: "fallback", durationMs: identityFallbackDurationMs },
+            { name: "sort", durationMs: sortDurationMs },
+            { name: "page", durationMs: paginationDurationMs },
+            { name: "project", durationMs: projectionDurationMs },
+            { name: "enrich", durationMs: enrichDurationMs },
+            { name: "total", durationMs: totalDurationWithoutMetaMs },
+          ]),
+        },
+      );
     }
 
+    const metaStart = Date.now();
     const configuredCommunities = await readJsonFile<string[]>(
       "reports/communities.json",
     );
@@ -333,14 +397,32 @@ export async function GET(request: NextRequest) {
       .map((value) => String(value || "").trim())
       .filter(Boolean)
       .sort((a, b) => a.localeCompare(b));
+    metaDurationMs = Date.now() - metaStart;
 
-    return NextResponse.json({
-      reports: reportsWithFaculty,
-      communities,
-      total: sortedReports.length,
-      offset,
-      limit,
-    });
+    const totalDurationMs = Date.now() - requestStart;
+
+    return NextResponse.json(
+      {
+        reports: reportsWithFaculty,
+        communities,
+        total: sortedReports.length,
+        offset,
+        limit,
+      },
+      {
+        headers: buildTimingResponseHeaders([
+          { name: "read", durationMs: readDurationMs },
+          { name: "filter", durationMs: primaryFilterDurationMs },
+          { name: "fallback", durationMs: identityFallbackDurationMs },
+          { name: "sort", durationMs: sortDurationMs },
+          { name: "page", durationMs: paginationDurationMs },
+          { name: "project", durationMs: projectionDurationMs },
+          { name: "enrich", durationMs: enrichDurationMs },
+          { name: "meta", durationMs: metaDurationMs },
+          { name: "total", durationMs: totalDurationMs },
+        ]),
+      },
+    );
   } catch (error) {
     console.error("Event report load error:", error);
     return NextResponse.json(

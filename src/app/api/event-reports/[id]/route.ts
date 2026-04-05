@@ -8,6 +8,33 @@ type EventReportWithMeta = EventReport & {
   updatedAt?: string;
 };
 
+export async function GET(
+  _request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  try {
+    const { id } = await params;
+    const reports =
+      await readJsonFile<EventReportWithMeta[]>("eventReports.json");
+    const report = reports.find((item) => item.id === id);
+
+    if (!report) {
+      return NextResponse.json(
+        { error: "Event report not found" },
+        { status: 404 },
+      );
+    }
+
+    return NextResponse.json({ report });
+  } catch (error) {
+    console.error("Event report get-by-id error:", error);
+    return NextResponse.json(
+      { error: "Failed to load event report" },
+      { status: 500 },
+    );
+  }
+}
+
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
