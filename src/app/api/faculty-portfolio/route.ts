@@ -25,6 +25,23 @@ function normalizeIdentity(value: unknown) {
     .toLowerCase();
 }
 
+function normalizeIdForMatching(value: unknown) {
+  const normalized = normalizeIdentity(value);
+  if (!normalized) {
+    return [] as string[];
+  }
+
+  const variants = new Set<string>([normalized]);
+
+  // Handle legacy serialized ObjectId formats used by older records.
+  variants.add(
+    normalized.replace(/^objectid\(["']?/, "").replace(/["']?\)$/, ""),
+  );
+  variants.add(normalized.replace(/^\{"\$oid":"/, "").replace(/"\}$/, ""));
+
+  return [...variants].filter(Boolean);
+}
+
 function buildUserIdentitySet(user: {
   id?: UserRecord["id"];
   username?: UserRecord["username"];
@@ -34,20 +51,19 @@ function buildUserIdentitySet(user: {
   const identities = new Set<string>();
 
   [user.id, user.username, user.email, user.firebaseUid].forEach((value) => {
-    const normalized = normalizeIdentity(value);
-    if (normalized) {
-      identities.add(normalized);
-    }
+    normalizeIdForMatching(value).forEach((variant) => identities.add(variant));
   });
 
   return identities;
 }
 
 function resolveUserByAnyIdentity(users: UserRecord[], value: unknown) {
-  const lookup = normalizeIdentity(value);
-  if (!lookup) {
+  const lookupVariants = normalizeIdForMatching(value);
+  if (lookupVariants.length === 0) {
     return null;
   }
+
+  const lookupSet = new Set(lookupVariants);
 
   return (
     users.find((user) => {
@@ -57,9 +73,27 @@ function resolveUserByAnyIdentity(users: UserRecord[], value: unknown) {
         email: user.email,
         firebaseUid: user.firebaseUid,
       });
-      return identities.has(lookup);
+      return [...identities].some((identity) => lookupSet.has(identity));
     }) ?? null
   );
+}
+
+function buildRecordIdentitySet(record: Record<string, unknown>) {
+  const identities = new Set<string>();
+
+  [
+    record.facultyId,
+    record.facultyID,
+    record.uploadedBy,
+    record.uploadedById,
+    record.facultyEmail,
+    record.email,
+    record.username,
+  ].forEach((value) => {
+    normalizeIdForMatching(value).forEach((variant) => identities.add(variant));
+  });
+
+  return identities;
 }
 
 function projectRecord<T extends Record<string, unknown>>(
@@ -81,6 +115,11 @@ export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
     const facultyId = String(searchParams.get("facultyId") || "").trim();
+    const facultyUsername = String(
+      searchParams.get("facultyUsername") || "",
+    ).trim();
+    const facultyEmail = String(searchParams.get("facultyEmail") || "").trim();
+    const facultyName = String(searchParams.get("facultyName") || "").trim();
     const pageSize = parsePositiveInt(searchParams.get("pageSize"), 40);
     const courseFilesPage = Math.max(
       1,
@@ -112,7 +151,26 @@ export async function GET(request: NextRequest) {
           email: requestedFacultyUser.email,
           firebaseUid: requestedFacultyUser.firebaseUid,
         })
-      : new Set<string>([normalizeIdentity(facultyId)]);
+      : new Set<string>(normalizeIdForMatching(facultyId));
+
+    normalizeIdForMatching(facultyUsername).forEach((variant) =>
+      facultyIdentitySet.add(variant),
+    );
+    normalizeIdForMatching(facultyEmail).forEach((variant) =>
+      facultyIdentitySet.add(variant),
+    );
+
+    const facultyNameSet = new Set<string>();
+    const normalizedRequestedName = normalizeIdentity(facultyName);
+    const normalizedResolvedName = normalizeIdentity(
+      requestedFacultyUser?.name,
+    );
+    if (normalizedRequestedName) {
+      facultyNameSet.add(normalizedRequestedName);
+    }
+    if (normalizedResolvedName) {
+      facultyNameSet.add(normalizedResolvedName);
+    }
 
     const fileProjection = new Set([
       "id",
@@ -150,13 +208,33 @@ export async function GET(request: NextRequest) {
     ]);
 
     const scopedFiles = (files || []).filter((file) => {
-      const fileIdentity = normalizeIdentity(file.facultyId);
-      return fileIdentity ? facultyIdentitySet.has(fileIdentity) : false;
+      const recordIdentities = buildRecordIdentitySet(file);
+      const byIdentity = [...recordIdentities].some((identity) =>
+        facultyIdentitySet.has(identity),
+      );
+      if (byIdentity) {
+        return true;
+      }
+
+      const recordFacultyName = normalizeIdentity(file.facultyName);
+      return recordFacultyName ? facultyNameSet.has(recordFacultyName) : false;
     });
 
     const scopedReports = (reports || []).filter((report) => {
-      const reportIdentity = normalizeIdentity(report.facultyId);
-      return reportIdentity ? facultyIdentitySet.has(reportIdentity) : false;
+      const recordIdentities = buildRecordIdentitySet(report);
+      const byIdentity = [...recordIdentities].some((identity) =>
+        facultyIdentitySet.has(identity),
+      );
+      if (byIdentity) {
+        return true;
+      }
+
+      const coordinatorName = normalizeIdentity(report.facultyCoordinator);
+      const reportFacultyName = normalizeIdentity(report.facultyName);
+      return (
+        (coordinatorName && facultyNameSet.has(coordinatorName)) ||
+        (reportFacultyName && facultyNameSet.has(reportFacultyName))
+      );
     });
 
     const sortedFiles = scopedFiles.slice().sort((a, b) => {

@@ -1,5 +1,6 @@
 export interface FacultyMember {
   id: string;
+  username?: string;
   name: string;
   department: string;
   role: string;

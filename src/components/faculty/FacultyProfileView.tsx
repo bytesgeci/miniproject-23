@@ -100,8 +100,27 @@ export function FacultyProfileView({
     const loadPortfolioData = async () => {
       setIsPortfolioLoading(true);
       try {
+        const query = new URLSearchParams({
+          facultyId: faculty.id,
+          pageSize: String(pageSize),
+          courseFilesPage: String(courseFilesPage),
+          eventReportsPage: String(eventReportsPage),
+        });
+
+        if (faculty.username) {
+          query.set("facultyUsername", faculty.username);
+        }
+
+        if (faculty.email) {
+          query.set("facultyEmail", faculty.email);
+        }
+
+        if (faculty.name) {
+          query.set("facultyName", faculty.name);
+        }
+
         const response = await fetch(
-          `/api/faculty-portfolio?facultyId=${encodeURIComponent(faculty.id)}&pageSize=${pageSize}&courseFilesPage=${courseFilesPage}&eventReportsPage=${eventReportsPage}`,
+          `/api/faculty-portfolio?${query.toString()}`,
           {
             cache: "no-store",
           },
