@@ -14,11 +14,47 @@ const EMPTY_STATS: DashboardStats = {
   recentActivity: [],
 };
 
+const FACULTY_DASHBOARD_CACHE_TTL_MS = 30_000;
+
+let facultyDashboardPageCache: {
+  key: string;
+  stats: DashboardStats;
+  facultyMembers: FacultyMember[];
+  expiresAt: number;
+} | null = null;
+
+function readFacultyDashboardCache(cacheKey: string) {
+  if (!facultyDashboardPageCache) {
+    return null;
+  }
+
+  if (facultyDashboardPageCache.key !== cacheKey) {
+    return null;
+  }
+
+  if (facultyDashboardPageCache.expiresAt <= Date.now()) {
+    facultyDashboardPageCache = null;
+    return null;
+  }
+
+  return facultyDashboardPageCache;
+}
+
+function writeFacultyDashboardCache(
+  cacheKey: string,
+  stats: DashboardStats,
+  facultyMembers: FacultyMember[],
+) {
+  facultyDashboardPageCache = {
+    key: cacheKey,
+    stats,
+    facultyMembers,
+    expiresAt: Date.now() + FACULTY_DASHBOARD_CACHE_TTL_MS,
+  };
+}
+
 export default function FacultyDashboardPage() {
   const { user } = useAuth();
-  const [stats, setStats] = useState<DashboardStats>(EMPTY_STATS);
-  const [facultyMembers, setFacultyMembers] = useState<FacultyMember[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
 
   const requestUrl = useMemo(() => {
     if (!user?.username) {
@@ -28,11 +64,25 @@ export default function FacultyDashboardPage() {
     return `/api/dashboard/faculty?username=${encodeURIComponent(user.username)}`;
   }, [user?.username]);
 
+  const cachedPayload = readFacultyDashboardCache(requestUrl);
+
+  const [stats, setStats] = useState<DashboardStats>(
+    cachedPayload?.stats ?? EMPTY_STATS,
+  );
+  const [facultyMembers, setFacultyMembers] = useState<FacultyMember[]>(
+    cachedPayload?.facultyMembers ?? [],
+  );
+  const [isLoading, setIsLoading] = useState(!cachedPayload);
+
   useEffect(() => {
     let isActive = true;
     const controller = new AbortController();
 
-    const load = async () => {
+    const load = async ({ showLoading }: { showLoading: boolean }) => {
+      if (showLoading && isActive) {
+        setIsLoading(true);
+      }
+
       try {
         const response = await fetch(requestUrl, {
           signal: controller.signal,
@@ -46,6 +96,11 @@ export default function FacultyDashboardPage() {
 
         if (data?.stats) {
           setStats(data.stats);
+          writeFacultyDashboardCache(
+            requestUrl,
+            data.stats,
+            Array.isArray(data?.facultyMembers) ? data.facultyMembers : [],
+          );
         }
 
         if (Array.isArray(data?.facultyMembers)) {
@@ -62,11 +117,23 @@ export default function FacultyDashboardPage() {
       }
     };
 
-    void load();
+    const hasFreshCache = Boolean(readFacultyDashboardCache(requestUrl));
+    void load({ showLoading: !hasFreshCache });
+
+    const onDataUpdated = () => {
+      void load({ showLoading: false });
+    };
+
+    if (typeof window !== "undefined") {
+      window.addEventListener("dashboard:data-updated", onDataUpdated);
+    }
 
     return () => {
       isActive = false;
       controller.abort();
+      if (typeof window !== "undefined") {
+        window.removeEventListener("dashboard:data-updated", onDataUpdated);
+      }
     };
   }, [requestUrl]);
 

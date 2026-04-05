@@ -93,6 +93,14 @@ interface LocalEventReportRecord {
   submittedDate?: string;
 }
 
+function formatCourseLabel(file: LocalCourseFileRecord) {
+  const courseCode = String(file.courseCode || "").trim();
+  const courseName = String(
+    (file as { courseName?: string }).courseName || "",
+  ).trim();
+  return [courseCode, courseName].filter(Boolean).join(" - ");
+}
+
 interface StudentsResponse {
   students: Student[];
 }
@@ -200,6 +208,12 @@ async function buildLocalFacultyCourseFileStats(
     return ["pending", "submitted", "in_review", "in review"].includes(status);
   }).length;
 
+  const courses = Array.from(
+    new Set(
+      facultyFiles.map((file) => formatCourseLabel(file)).filter(Boolean),
+    ),
+  ).sort((a, b) => a.localeCompare(b));
+
   const recentActivity = facultyFiles
     .slice()
     .sort((a, b) => {
@@ -218,6 +232,56 @@ async function buildLocalFacultyCourseFileStats(
     totalFiles: facultyFiles.length,
     pendingFiles,
     recentActivity,
+    courses,
+  };
+}
+
+async function buildLocalFacultyEventReportStats(
+  identityCandidates: Set<string>,
+) {
+  const reports =
+    await readJsonFile<LocalEventReportRecord[]>("eventReports.json");
+
+  const facultyReports = (reports || []).filter((report) => {
+    if (!report) return false;
+    const reportId = String(report.facultyId || "").trim();
+    if (!reportId) return false;
+    return normalizeIdForMatching(reportId).some((rid) =>
+      identityCandidates.has(rid),
+    );
+  });
+
+  const pendingReports = facultyReports.filter((report) => {
+    const status = normalizeAuditStatus(report.status);
+    return ["pending", "submitted", "in_review", "in review", "draft"].includes(
+      status,
+    );
+  }).length;
+
+  const totalParticipants = facultyReports.reduce(
+    (sum, report) => sum + (Number(report.participants) || 0),
+    0,
+  );
+
+  const recentActivity = facultyReports
+    .slice()
+    .sort((a, b) => {
+      const aTime = new Date(a.submittedDate || a.createdAt || 0).getTime();
+      const bTime = new Date(b.submittedDate || b.createdAt || 0).getTime();
+      return bTime - aTime;
+    })
+    .slice(0, 3)
+    .map((report) => ({
+      action: "Reported",
+      item: report.eventName || "Event Report",
+      time: formatTimeAgo(report.submittedDate || report.createdAt),
+    }));
+
+  return {
+    totalReports: facultyReports.length,
+    pendingReports,
+    totalParticipants,
+    recentActivity,
   };
 }
 
@@ -233,7 +297,7 @@ async function buildLocalFacultyDashboardData(
     { serializedId: string; originalUser: (typeof users)[0] }
   >();
 
-  const facultyMembers = users
+  const facultyMembers: FacultyMember[] = users
     .filter((user) => {
       const primaryRole = normalizeRoleInput(user.role);
       const normalizedRoles = Array.isArray(user.roles)
@@ -264,7 +328,7 @@ async function buildLocalFacultyDashboardData(
         isStaffAdvisor: normalizedRoles.includes("staff-advisor"),
         email: String(user.email || user.username || ""),
         phone: String(user.phone || ""),
-        courses: [],
+        courses: [] as string[],
         specialization: "",
         experience: "",
         profileImageUrl: "",
@@ -304,28 +368,23 @@ async function buildLocalFacultyDashboardData(
       firebaseUid: String(originalUser?.firebaseUid ?? ""),
     });
 
-    const [localCourseStats, eventReports] = await Promise.all([
+    const [localCourseStats, localEventStats] = await Promise.all([
       buildLocalFacultyCourseFileStats(identityCandidates),
-      readJsonFile<LocalEventReportRecord[]>("eventReports.json"),
+      buildLocalFacultyEventReportStats(identityCandidates),
     ]);
 
-    const facultyReports = (eventReports || []).filter((report) => {
-      if (!report?.facultyId) return false;
-      const reportFacultyId = String(report.facultyId).trim();
-      if (!reportFacultyId) return false;
-
-      const normalizedReportIds = normalizeIdForMatching(reportFacultyId);
-      return normalizedReportIds.some((rid) => identityCandidates.has(rid));
-    });
-
     stats.totalFiles = localCourseStats.totalFiles;
-    stats.totalReports = facultyReports.length;
-    stats.pendingReports = localCourseStats.pendingFiles;
-    stats.totalParticipants = facultyReports.reduce(
-      (sum, report) => sum + (Number(report.participants) || 0),
-      0,
-    );
-    stats.recentActivity = localCourseStats.recentActivity;
+    stats.totalReports = localEventStats.totalReports;
+    stats.pendingReports = localEventStats.pendingReports;
+    stats.totalParticipants = localEventStats.totalParticipants;
+    stats.recentActivity = [
+      ...localCourseStats.recentActivity,
+      ...localEventStats.recentActivity,
+    ].slice(0, 5);
+
+    if (!selectedUser.courses || selectedUser.courses.length === 0) {
+      selectedUser.courses = localCourseStats.courses;
+    }
   }
 
   return { stats, facultyMembers };
@@ -644,12 +703,25 @@ export async function getFacultyDashboardData(
             username: String(selectedUser.username ?? ""),
             email: String(selectedUser.email ?? ""),
           });
-          const localCourseStats =
-            await buildLocalFacultyCourseFileStats(identityCandidates);
+          const [localCourseStats, localEventStats] = await Promise.all([
+            buildLocalFacultyCourseFileStats(identityCandidates),
+            buildLocalFacultyEventReportStats(identityCandidates),
+          ]);
+
           stats.totalFiles = localCourseStats.totalFiles;
-          stats.pendingReports = localCourseStats.pendingFiles;
-          if (localCourseStats.recentActivity.length > 0) {
-            stats.recentActivity = localCourseStats.recentActivity;
+          stats.totalReports = localEventStats.totalReports;
+          stats.pendingReports = localEventStats.pendingReports;
+          stats.totalParticipants = localEventStats.totalParticipants;
+          const mergedRecentActivity = [
+            ...localCourseStats.recentActivity,
+            ...localEventStats.recentActivity,
+          ].slice(0, 5);
+          if (mergedRecentActivity.length > 0) {
+            stats.recentActivity = mergedRecentActivity;
+          }
+
+          if (!selectedUser.courses || selectedUser.courses.length === 0) {
+            selectedUser.courses = localCourseStats.courses;
           }
         } catch (error) {
           console.warn("Local faculty course-file stats lookup failed", {
