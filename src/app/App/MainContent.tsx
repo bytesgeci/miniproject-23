@@ -107,7 +107,7 @@ export function MainContent({
           </TabsList>
         )}
 
-        <TabsContent value="dashboard" className="space-y-6">
+        <TabsContent value="dashboard" className="space-y-6" forceMount>
           {userRole === "faculty" && facultyData && (
             <FacultyDashboard
               stats={facultyData.stats}
@@ -134,11 +134,11 @@ export function MainContent({
         {/* Only render these tabs for faculty */}
         {userRole === "faculty" && (
           <>
-            <TabsContent value="files" className="space-y-6">
+            <TabsContent value="files" className="space-y-6" forceMount>
               <CourseFileManager />
             </TabsContent>
 
-            <TabsContent value="events" className="space-y-6">
+            <TabsContent value="events" className="space-y-6" forceMount>
               <EventReportManager />
             </TabsContent>
           </>

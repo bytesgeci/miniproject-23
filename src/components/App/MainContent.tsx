@@ -108,7 +108,7 @@ export function MainContent({
           </TabsList>
         )}
 
-        <TabsContent value="dashboard" className="space-y-6">
+        <TabsContent value="dashboard" className="space-y-6" forceMount>
           {showDashboardLoading ? (
             <div className="space-y-4">
               <Skeleton className="h-24 w-full" />
@@ -142,11 +142,11 @@ export function MainContent({
         {/* Only render these tabs for faculty */}
         {userRole === "faculty" && (
           <>
-            <TabsContent value="files" className="space-y-6">
+            <TabsContent value="files" className="space-y-6" forceMount>
               <CourseFileManager />
             </TabsContent>
 
-            <TabsContent value="events" className="space-y-6">
+            <TabsContent value="events" className="space-y-6" forceMount>
               <EventReportManager />
             </TabsContent>
           </>
