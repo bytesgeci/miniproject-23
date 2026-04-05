@@ -43,6 +43,7 @@ import {
   Search,
   FileCheck,
   Upload,
+  Loader2,
   Image as ImageIcon,
   X,
 } from "lucide-react";
@@ -99,6 +100,13 @@ export function EventReportManager({
   const [filterCommunity, setFilterCommunity] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isCreatingReport, setIsCreatingReport] = useState(false);
+  const [isSubmittingReportId, setIsSubmittingReportId] = useState<
+    string | null
+  >(null);
+  const [isDeletingReportId, setIsDeletingReportId] = useState<string | null>(
+    null,
+  );
   const [isViewOpen, setIsViewOpen] = useState(false);
   const [selectedReport, setSelectedReport] = useState<EventReport | null>(
     null,
@@ -320,10 +328,16 @@ export function EventReportManager({
   const handleCreateReport = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    if (isCreatingReport) {
+      return;
+    }
+
     if (!newReport.thumbnailFile) {
       toast.error("Please upload a thumbnail image");
       return;
     }
+
+    setIsCreatingReport(true);
 
     try {
       const response = await fetch("/api/event-reports", {
@@ -384,10 +398,18 @@ export function EventReportManager({
     } catch (error) {
       console.error("Report create error:", error);
       toast.error("An error occurred during creation");
+    } finally {
+      setIsCreatingReport(false);
     }
   };
 
   const handleSubmitReport = async (id: string) => {
+    if (isSubmittingReportId === id) {
+      return;
+    }
+
+    setIsSubmittingReportId(id);
+
     try {
       const response = await fetch(`/api/event-reports/${id}`, {
         method: "PATCH",
@@ -412,10 +434,18 @@ export function EventReportManager({
     } catch (error) {
       console.error("Submit error:", error);
       toast.error("An error occurred while submitting");
+    } finally {
+      setIsSubmittingReportId(null);
     }
   };
 
   const handleDelete = async (id: string) => {
+    if (isDeletingReportId === id) {
+      return;
+    }
+
+    setIsDeletingReportId(id);
+
     try {
       const response = await fetch(`/api/event-reports/${id}`, {
         method: "DELETE",
@@ -433,6 +463,8 @@ export function EventReportManager({
     } catch (error) {
       console.error("Delete error:", error);
       toast.error("An error occurred while deleting");
+    } finally {
+      setIsDeletingReportId(null);
     }
   };
 
@@ -565,7 +597,14 @@ export function EventReportManager({
                 ))}
               </SelectContent>
             </Select>
-            <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+            <Dialog
+              open={isCreateOpen}
+              onOpenChange={(nextOpen) => {
+                if (!isCreatingReport) {
+                  setIsCreateOpen(nextOpen);
+                }
+              }}
+            >
               <DialogTrigger asChild>
                 <Button className="w-full md:w-auto">
                   <Plus className="h-4 w-4 mr-2" />
@@ -847,9 +886,17 @@ export function EventReportManager({
                   </div>
 
                   <div className="flex gap-2 pt-4">
-                    <Button type="submit" className="flex-1">
-                      <Upload className="h-4 w-4 mr-2" />
-                      Save as Draft
+                    <Button
+                      type="submit"
+                      className="flex-1"
+                      disabled={isCreatingReport}
+                    >
+                      {isCreatingReport ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <Upload className="h-4 w-4 mr-2" />
+                      )}
+                      {isCreatingReport ? "Saving..." : "Save as Draft"}
                     </Button>
                   </div>
                 </form>
@@ -946,15 +993,31 @@ export function EventReportManager({
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => handleSubmitReport(report.id)}
+                                disabled={
+                                  isSubmittingReportId === report.id ||
+                                  isDeletingReportId === report.id
+                                }
                               >
-                                <FileCheck className="h-4 w-4 text-green-600" />
+                                {isSubmittingReportId === report.id ? (
+                                  <Loader2 className="h-4 w-4 text-green-600 animate-spin" />
+                                ) : (
+                                  <FileCheck className="h-4 w-4 text-green-600" />
+                                )}
                               </Button>
                               <Button
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => handleDelete(report.id)}
+                                disabled={
+                                  isDeletingReportId === report.id ||
+                                  isSubmittingReportId === report.id
+                                }
                               >
-                                <Trash2 className="h-4 w-4 text-red-600" />
+                                {isDeletingReportId === report.id ? (
+                                  <Loader2 className="h-4 w-4 text-red-600 animate-spin" />
+                                ) : (
+                                  <Trash2 className="h-4 w-4 text-red-600" />
+                                )}
                               </Button>
                             </>
                           )}

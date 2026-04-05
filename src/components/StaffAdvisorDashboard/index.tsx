@@ -45,6 +45,9 @@ export function StaffAdvisorDashboard({
   const [selectedCommunity, setSelectedCommunity] = useState("");
   const [selectedActivitySemester, setSelectedActivitySemester] = useState("");
   const [activityPoints, setActivityPoints] = useState("");
+  const [deletingStudentId, setDeletingStudentId] = useState<string | null>(
+    null,
+  );
   const studentApiQuery = useMemo(() => {
     const params = new URLSearchParams();
     if (user?.username) {
@@ -245,7 +248,7 @@ export function StaffAdvisorDashboard({
   ]);
 
   const handleAddStudent = useCallback(
-    async (student: Student) => {
+    async (student: Student): Promise<boolean> => {
       try {
         const response = await fetch(`/api/students${studentApiQuery}`, {
           method: "POST",
@@ -277,13 +280,16 @@ export function StaffAdvisorDashboard({
           setStudentList((prev) => [savedStudent, ...prev]);
           notifyDashboardDataUpdated();
           toast.success("Student added successfully");
-        } else {
-          const error = await response.json();
-          toast.error(error.error || "Failed to add student");
+          return true;
         }
+
+        const error = await response.json();
+        toast.error(error.error || "Failed to add student");
+        return false;
       } catch (error) {
         console.error("Error adding student:", error);
         toast.error("Failed to add student");
+        return false;
       }
     },
     [notifyDashboardDataUpdated, studentApiQuery],
@@ -291,6 +297,11 @@ export function StaffAdvisorDashboard({
 
   const handleDeleteStudent = useCallback(
     async (studentId: string) => {
+      if (deletingStudentId === studentId) {
+        return;
+      }
+
+      setDeletingStudentId(studentId);
       try {
         const response = await fetch(
           `/api/students/${studentId}${studentApiQuery}`,
@@ -315,9 +326,11 @@ export function StaffAdvisorDashboard({
       } catch (error) {
         console.error("Error deleting student:", error);
         toast.error("Failed to delete student");
+      } finally {
+        setDeletingStudentId(null);
       }
     },
-    [notifyDashboardDataUpdated, studentApiQuery],
+    [deletingStudentId, notifyDashboardDataUpdated, studentApiQuery],
   );
 
   return (

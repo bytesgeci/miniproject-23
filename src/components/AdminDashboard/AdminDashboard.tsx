@@ -164,6 +164,7 @@ export function AdminDashboard() {
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [userToDelete, setUserToDelete] = useState<AdminUser | null>(null);
+  const [isDeletingUser, setIsDeletingUser] = useState(false);
   const [notifications, setNotifications] = useState<NotificationData[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
@@ -353,7 +354,12 @@ export function AdminDashboard() {
     }
   };
 
-  const handleDeleteUser = async (userId: string) => {
+  const handleDeleteUser = async (userId: string): Promise<boolean> => {
+    if (isDeletingUser) {
+      return false;
+    }
+
+    setIsDeletingUser(true);
     try {
       const response = await fetch(`/api/users/${userId}`, {
         method: "DELETE",
@@ -361,14 +367,18 @@ export function AdminDashboard() {
       const data = await response.json();
       if (!response.ok) {
         toast.error(data.error || "Delete failed");
-        return;
+        return false;
       }
       await fetchUsers();
       toast.success("User deleted successfully");
       pushNotification("User deleted", "warning");
+      return true;
     } catch (error) {
       console.error("Delete error:", error);
       toast.error("Failed to delete user");
+      return false;
+    } finally {
+      setIsDeletingUser(false);
     }
   };
 
@@ -490,7 +500,11 @@ export function AdminDashboard() {
 
       <AlertDialog
         open={isDeleteDialogOpen}
-        onOpenChange={setIsDeleteDialogOpen}
+        onOpenChange={(nextOpen) => {
+          if (!isDeletingUser) {
+            setIsDeleteDialogOpen(nextOpen);
+          }
+        }}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -501,18 +515,24 @@ export function AdminDashboard() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel disabled={isDeletingUser}>
+              Cancel
+            </AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
                 if (userToDelete) {
-                  handleDeleteUser(userToDelete.id);
-                  setIsDeleteDialogOpen(false);
-                  setUserToDelete(null);
+                  void handleDeleteUser(userToDelete.id).then((deleted) => {
+                    if (deleted) {
+                      setIsDeleteDialogOpen(false);
+                      setUserToDelete(null);
+                    }
+                  });
                 }
               }}
+              disabled={isDeletingUser}
               className="bg-red-600 hover:bg-red-700"
             >
-              Delete
+              {isDeletingUser ? "Deleting..." : "Delete"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

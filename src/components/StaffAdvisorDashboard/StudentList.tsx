@@ -38,7 +38,7 @@ interface StudentListProps {
   students: Student[];
   stats: DashboardStats;
   onSelectStudent: (student: Student) => void;
-  onAddStudent: (student: Student) => void;
+  onAddStudent: (student: Student) => Promise<boolean>;
 }
 
 interface StudentFormState {
@@ -113,6 +113,7 @@ function StudentListComponent({
 }: StudentListProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isAddingStudent, setIsAddingStudent] = useState(false);
   const [form, setForm] = useState<StudentFormState>({
     ...emptyForm,
     batchYear: resolveInitialBatchYear(stats.batchYear),
@@ -295,8 +296,13 @@ function StudentListComponent({
     return Object.keys(nextErrors).length === 0;
   };
 
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+
+    if (isAddingStudent) {
+      return;
+    }
+
     if (!validate()) {
       return;
     }
@@ -321,13 +327,22 @@ function StudentListComponent({
       activities: [],
     };
 
-    onAddStudent(newStudent);
-    setForm({
-      ...emptyForm,
-      batchYear: resolveInitialBatchYear(stats.batchYear),
-    });
-    setErrors({});
-    setIsDialogOpen(false);
+    setIsAddingStudent(true);
+    try {
+      const added = await onAddStudent(newStudent);
+      if (!added) {
+        return;
+      }
+
+      setForm({
+        ...emptyForm,
+        batchYear: resolveInitialBatchYear(stats.batchYear),
+      });
+      setErrors({});
+      setIsDialogOpen(false);
+    } finally {
+      setIsAddingStudent(false);
+    }
   };
 
   return (
@@ -340,11 +355,18 @@ function StudentListComponent({
               Manage and track student progress and placements
             </CardDescription>
           </div>
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+          <Dialog
+            open={isDialogOpen}
+            onOpenChange={(nextOpen) => {
+              if (!isAddingStudent) {
+                setIsDialogOpen(nextOpen);
+              }
+            }}
+          >
             <DialogTrigger asChild>
-              <Button size="sm">
+              <Button size="sm" disabled={isAddingStudent}>
                 <Plus className="h-4 w-4 mr-2" />
-                Add Student
+                {isAddingStudent ? "Adding..." : "Add Student"}
               </Button>
             </DialogTrigger>
             <DialogContent>
@@ -446,8 +468,12 @@ function StudentListComponent({
                   )}
                 </div>
                 <DialogFooter>
-                  <Button type="submit" className="w-full">
-                    Add Student
+                  <Button
+                    type="submit"
+                    className="w-full"
+                    disabled={isAddingStudent}
+                  >
+                    {isAddingStudent ? "Adding..." : "Add Student"}
                   </Button>
                 </DialogFooter>
               </form>

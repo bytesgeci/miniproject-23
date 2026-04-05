@@ -46,6 +46,7 @@ import {
   ChevronDown,
   ChevronRight,
   CheckCircle2,
+  Loader2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
@@ -194,6 +195,8 @@ export function CourseFileManager({
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterYear, setFilterYear] = useState("all");
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+  const [isUploadingFile, setIsUploadingFile] = useState(false);
+  const [deletingFileId, setDeletingFileId] = useState<string | null>(null);
   const [selectedFileType, setSelectedFileType] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("");
   const [courseCode, setCourseCode] = useState("");
@@ -405,6 +408,10 @@ export function CourseFileManager({
   const handleFileUpload = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    if (isUploadingFile) {
+      return;
+    }
+
     if (
       !selectedUploadFile ||
       !fileName ||
@@ -423,6 +430,8 @@ export function CourseFileManager({
       toast.error("Batch must be in YYYY-YYYY format (for example 2022-2026)");
       return;
     }
+
+    setIsUploadingFile(true);
 
     try {
       const documentUrl = await fileToDataUrl(selectedUploadFile);
@@ -473,10 +482,16 @@ export function CourseFileManager({
     } catch (error) {
       console.error("File upload error:", error);
       toast.error("An error occurred during upload");
+    } finally {
+      setIsUploadingFile(false);
     }
   };
 
   const handleDelete = async (id: string) => {
+    if (deletingFileId === id) {
+      return;
+    }
+
     const fileToDelete = files.find((file) => file.id === id);
     if (fileToDelete?.auditChecklistStatus === "yes") {
       toast.error(
@@ -484,6 +499,8 @@ export function CourseFileManager({
       );
       return;
     }
+
+    setDeletingFileId(id);
 
     try {
       const response = await fetch(`/api/course-files/${id}`, {
@@ -502,6 +519,8 @@ export function CourseFileManager({
     } catch (error) {
       console.error("Delete error:", error);
       toast.error("An error occurred while deleting");
+    } finally {
+      setDeletingFileId(null);
     }
   };
 
@@ -697,11 +716,22 @@ export function CourseFileManager({
                 ))}
               </SelectContent>
             </Select>
-            <Dialog open={uploadDialogOpen} onOpenChange={setUploadDialogOpen}>
+            <Dialog
+              open={uploadDialogOpen}
+              onOpenChange={(nextOpen) => {
+                if (!isUploadingFile) {
+                  setUploadDialogOpen(nextOpen);
+                }
+              }}
+            >
               <DialogTrigger asChild>
-                <Button className="w-full md:w-auto">
-                  <Upload className="h-4 w-4 mr-2" />
-                  Upload File
+                <Button className="w-full md:w-auto" disabled={isUploadingFile}>
+                  {isUploadingFile ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Upload className="h-4 w-4 mr-2" />
+                  )}
+                  {isUploadingFile ? "Uploading..." : "Upload File"}
                 </Button>
               </DialogTrigger>
               <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
@@ -819,8 +849,19 @@ export function CourseFileManager({
                       </Select>
                     </div>
                   </div>
-                  <Button type="submit" className="w-full">
-                    Upload File
+                  <Button
+                    type="submit"
+                    className="w-full"
+                    disabled={isUploadingFile}
+                  >
+                    {isUploadingFile ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Uploading...
+                      </>
+                    ) : (
+                      "Upload File"
+                    )}
                   </Button>
                 </form>
               </DialogContent>
@@ -1043,14 +1084,21 @@ export function CourseFileManager({
                                     variant="ghost"
                                     size="sm"
                                     onClick={() => handleDelete(file.id)}
-                                    disabled={isChecklistLocked}
+                                    disabled={
+                                      isChecklistLocked ||
+                                      deletingFileId === file.id
+                                    }
                                     title={
                                       isChecklistLocked
                                         ? "Checklist-approved file cannot be deleted"
                                         : "Delete File"
                                     }
                                   >
-                                    <Trash2 className="h-4 w-4 text-red-600" />
+                                    {deletingFileId === file.id ? (
+                                      <Loader2 className="h-4 w-4 text-red-600 animate-spin" />
+                                    ) : (
+                                      <Trash2 className="h-4 w-4 text-red-600" />
+                                    )}
                                   </Button>
                                 </div>
                               </div>
