@@ -92,6 +92,13 @@ interface LocalCourseFileRecord {
 
 interface LocalEventReportRecord {
   facultyId?: string;
+  uploadedBy?: string;
+  uploadedById?: string;
+  facultyName?: string;
+  facultyCoordinator?: string;
+  facultyEmail?: string;
+  email?: string;
+  username?: string;
   status?: string;
   participants?: number;
   eventName?: string;
@@ -138,6 +145,20 @@ function normalizeAuditStatus(value?: string | null) {
   return String(value || "")
     .trim()
     .toLowerCase();
+}
+
+function isPendingAuditStatus(status: string) {
+  return ["pending", "submitted", "in_review", "in review", "draft"].includes(
+    status,
+  );
+}
+
+function isApprovedAuditStatus(status: string) {
+  return status === "approved";
+}
+
+function isRejectedAuditStatus(status: string) {
+  return status === "rejected";
 }
 
 function formatTimeAgo(timestamp?: string | null) {
@@ -481,6 +502,145 @@ async function buildLocalFacultyDashboardData(
   }
 
   return { stats, facultyMembers: enrichedFacultyMembers };
+}
+
+interface AuditorSubmissionCounts {
+  totalFiles: number;
+  approvedFiles: number;
+  pendingFiles: number;
+  rejectedFiles: number;
+  totalReports: number;
+  approvedReports: number;
+  pendingReports: number;
+  rejectedReports: number;
+}
+
+async function buildLocalAuditorSubmissionAggregates(
+  facultyMembers: AuditorFacultyMember[],
+) {
+  const [courseFiles, eventReports] = await Promise.all([
+    readJsonFile<LocalCourseFileRecord[]>("courseFiles.json"),
+    readJsonFile<LocalEventReportRecord[]>("eventReports.json"),
+  ]);
+
+  const perFaculty = new Map<string, AuditorSubmissionCounts>();
+  const memberIdentityMap = new Map<
+    string,
+    { identities: Set<string>; normalizedName: string; normalizedEmail: string }
+  >();
+
+  const createEmptyCounts = (): AuditorSubmissionCounts => ({
+    totalFiles: 0,
+    approvedFiles: 0,
+    pendingFiles: 0,
+    rejectedFiles: 0,
+    totalReports: 0,
+    approvedReports: 0,
+    pendingReports: 0,
+    rejectedReports: 0,
+  });
+
+  const totals = createEmptyCounts();
+
+  facultyMembers.forEach((member) => {
+    const memberId = String(member.id || "");
+    perFaculty.set(memberId, createEmptyCounts());
+    memberIdentityMap.set(memberId, {
+      identities: buildUserIdentityCandidates({
+        id: memberId,
+        email: String(member.email || ""),
+      }),
+      normalizedName: normalizeIdentity(member.name),
+      normalizedEmail: normalizeIdentity(member.email),
+    });
+  });
+
+  const resolveMemberId = (record: Record<string, unknown>) => {
+    for (const [memberId, memberIdentity] of memberIdentityMap.entries()) {
+      const identityFields = [
+        record.facultyId,
+        record.uploadedBy,
+        record.uploadedById,
+        record.username,
+        record.facultyEmail,
+        record.email,
+      ];
+
+      const byIdentity = identityFields.some((value) => {
+        const normalized = normalizeIdentity(String(value || ""));
+        if (!normalized) {
+          return false;
+        }
+
+        return normalizeIdForMatching(normalized).some((candidate) =>
+          memberIdentity.identities.has(candidate),
+        );
+      });
+
+      if (byIdentity) {
+        return memberId;
+      }
+
+      const recordName = normalizeIdentity(
+        String(
+          record.facultyName ||
+            record.facultyCoordinator ||
+            record.uploadedBy ||
+            "",
+        ),
+      );
+      if (recordName && recordName === memberIdentity.normalizedName) {
+        return memberId;
+      }
+
+      const recordEmail = normalizeIdentity(
+        String(record.facultyEmail || record.email || ""),
+      );
+      if (recordEmail && recordEmail === memberIdentity.normalizedEmail) {
+        return memberId;
+      }
+    }
+
+    return null;
+  };
+
+  for (const file of courseFiles || []) {
+    const status = normalizeAuditStatus(file.status);
+    totals.totalFiles += 1;
+    if (isApprovedAuditStatus(status)) totals.approvedFiles += 1;
+    else if (isRejectedAuditStatus(status)) totals.rejectedFiles += 1;
+    else if (isPendingAuditStatus(status)) totals.pendingFiles += 1;
+
+    const memberId = resolveMemberId(file as Record<string, unknown>);
+    if (!memberId) continue;
+
+    const current = perFaculty.get(memberId);
+    if (!current) continue;
+    current.totalFiles += 1;
+    if (isApprovedAuditStatus(status)) current.approvedFiles += 1;
+    else if (isRejectedAuditStatus(status)) current.rejectedFiles += 1;
+    else if (isPendingAuditStatus(status)) current.pendingFiles += 1;
+  }
+
+  for (const report of eventReports || []) {
+    const status = normalizeAuditStatus(report.status);
+    totals.totalReports += 1;
+    if (isApprovedAuditStatus(status)) totals.approvedReports += 1;
+    else if (isRejectedAuditStatus(status)) totals.rejectedReports += 1;
+    else if (isPendingAuditStatus(status)) totals.pendingReports += 1;
+
+    const memberId = resolveMemberId(report as Record<string, unknown>);
+    if (!memberId) continue;
+
+    const current = perFaculty.get(memberId);
+    if (!current) continue;
+    current.totalReports += 1;
+    if (isApprovedAuditStatus(status)) current.approvedReports += 1;
+    else if (isRejectedAuditStatus(status)) current.rejectedReports += 1;
+    else if (isPendingAuditStatus(status)) current.pendingReports += 1;
+  }
+
+  return { perFaculty, totals };
 }
 
 async function buildPendingMapFromLocalData() {
@@ -1082,11 +1242,47 @@ export async function getAuditorDashboardData(): Promise<{
       }
     }
 
+    try {
+      const localAggregates =
+        await buildLocalAuditorSubmissionAggregates(facultyMembers);
+
+      facultyMembers = facultyMembers.map((member) => {
+        const localCounts = localAggregates.perFaculty.get(
+          String(member.id || ""),
+        );
+        if (!localCounts) {
+          return member;
+        }
+
+        return {
+          ...member,
+          totalFiles: localCounts.totalFiles,
+          approvedFiles: localCounts.approvedFiles,
+          pendingFiles: localCounts.pendingFiles,
+          rejectedFiles: localCounts.rejectedFiles,
+          totalReports: localCounts.totalReports,
+          approvedReports: localCounts.approvedReports,
+          pendingReports: localCounts.pendingReports,
+          rejectedReports: localCounts.rejectedReports,
+        };
+      });
+
+      stats.totalFiles = localAggregates.totals.totalFiles;
+      stats.approvedFiles = localAggregates.totals.approvedFiles;
+      stats.pendingFiles = localAggregates.totals.pendingFiles;
+      stats.rejectedFiles = localAggregates.totals.rejectedFiles;
+      stats.totalReports = localAggregates.totals.totalReports;
+      stats.approvedReports = localAggregates.totals.approvedReports;
+      stats.pendingReports = localAggregates.totals.pendingReports;
+      stats.rejectedReports = localAggregates.totals.rejectedReports;
+    } catch (error) {
+      console.warn("Local auditor aggregate stats failed", {
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+
     stats.totalFaculty = facultyMembers.length;
-    stats.totalFiles = facultyMembers.reduce(
-      (sum, faculty) => sum + (faculty.totalFiles || 0),
-      0,
-    );
+
     stats.completionRate = (engagements.engagements || []).length
       ? Math.round(
           (engagements.engagements || []).reduce(
