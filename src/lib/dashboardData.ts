@@ -379,6 +379,105 @@ async function buildPendingMapFromLocalData() {
   return pendingByFacultyId;
 }
 
+async function buildLocalDashboardEndpointFallback(endpoint: string) {
+  if (endpoint === "/faculty-list") {
+    const users = await getAllUsers();
+    const facultyMembers = users
+      .filter((user) => {
+        const primaryRole = normalizeRoleInput(user.role);
+        const normalizedRoles = Array.isArray(user.roles)
+          ? (user.roles
+              .map((role) => normalizeRoleInput(role))
+              .filter(Boolean) as string[])
+          : [];
+
+        return primaryRole === "faculty" || normalizedRoles.includes("faculty");
+      })
+      .map((user) => {
+        const normalizedRoles = Array.isArray(user.roles)
+          ? (user.roles
+              .map((role) => normalizeRoleInput(role))
+              .filter(Boolean) as string[])
+          : [];
+
+        return {
+          id: serializeId(user.id),
+          username: String(user.username || ""),
+          name: String(user.name || user.username || "Faculty"),
+          department: String(user.department || ""),
+          role: String(user.role || "faculty"),
+          roles: normalizedRoles,
+          isStaffAdvisor: normalizedRoles.includes("staff-advisor"),
+          email: String(user.email || user.username || ""),
+          phone: String(user.phone || ""),
+          courses: [],
+          specialization: "",
+          experience: "",
+          profileImageUrl: "",
+          resumeUrl: "",
+          resumeFileName: "",
+        } as FacultyMember;
+      });
+
+    return {
+      facultyMembers,
+      total: facultyMembers.length,
+    };
+  }
+
+  if (endpoint.startsWith("/faculty-stats/")) {
+    return {
+      stats: {
+        totalFiles: 0,
+        totalReports: 0,
+        pendingReports: 0,
+        totalParticipants: 0,
+        recentActivity: [],
+      },
+    };
+  }
+
+  if (endpoint === "/engagements") {
+    return {
+      engagements: [],
+    };
+  }
+
+  if (endpoint === "/pending-audit-faculty") {
+    const pendingMap = await buildPendingMapFromLocalData();
+    const pendingFaculty = [...pendingMap.entries()].map(
+      ([facultyId, counts]) => ({
+        facultyId,
+        pendingFiles: counts.pendingFiles,
+        pendingReports: counts.pendingReports,
+        totalPending: counts.pendingFiles + counts.pendingReports,
+      }),
+    );
+
+    return {
+      pendingFaculty,
+      totalFaculty: pendingFaculty.length,
+    };
+  }
+
+  if (endpoint.startsWith("/students")) {
+    const url = new URL(`http://local${endpoint}`);
+    const advisorId = String(url.searchParams.get("advisorId") || "").trim();
+    const students = await readJsonFile<Student[]>("students.json");
+    const filteredStudents = advisorId
+      ? (students || []).filter(
+          (student) => String(student?.advisorId || "").trim() === advisorId,
+        )
+      : students || [];
+
+    return {
+      students: filteredStudents,
+    };
+  }
+
+  return {};
+}
+
 /**
  * Fetch dashboard data from MongoDB via API
  */
@@ -418,9 +517,11 @@ async function fetchFromDashboardAPI<T>(endpoint: string): Promise<T> {
         : localhostFallbacks;
 
   if (baseUrlCandidates.length === 0) {
-    throw new Error(
-      "Dashboard API base URL is not configured. Set NEXT_PUBLIC_BACKEND_URL or BACKEND_URL in production.",
+    console.warn(
+      "Dashboard API base URL not configured; using local fallback",
+      { endpoint },
     );
+    return (await buildLocalDashboardEndpointFallback(endpoint)) as T;
   }
 
   const attemptErrors: string[] = [];
@@ -462,9 +563,10 @@ async function fetchFromDashboardAPI<T>(endpoint: string): Promise<T> {
     }
   }
 
-  throw new Error(
-    `Failed to fetch dashboard endpoint '${endpoint}'. Attempts: ${attemptErrors.join(" | ")}`,
-  );
+  console.warn(`Failed to fetch dashboard endpoint '${endpoint}'`, {
+    attempts: attemptErrors,
+  });
+  return (await buildLocalDashboardEndpointFallback(endpoint)) as T;
 }
 
 export async function getFacultyDashboardData(
