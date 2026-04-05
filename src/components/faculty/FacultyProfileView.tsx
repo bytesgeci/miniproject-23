@@ -26,6 +26,7 @@ export function FacultyProfileView({
   courseFiles: initialCourseFiles,
   eventReports: initialEventReports,
 }: FacultyProfileViewProps) {
+  const pageSize = 40;
   const [selectedFile, setSelectedFile] = useState<CourseFile | null>(null);
   const [selectedReport, setSelectedReport] = useState<EventReport | null>(
     null,
@@ -34,8 +35,20 @@ export function FacultyProfileView({
   const [isReportViewOpen, setIsReportViewOpen] = useState(false);
   const [courseFiles, setCourseFiles] = useState(initialCourseFiles);
   const [eventReports, setEventReports] = useState(initialEventReports);
+  const [courseFilesPage, setCourseFilesPage] = useState(1);
+  const [eventReportsPage, setEventReportsPage] = useState(1);
+  const [courseFilesTotal, setCourseFilesTotal] = useState(
+    initialCourseFiles.length,
+  );
+  const [eventReportsTotal, setEventReportsTotal] = useState(
+    initialEventReports.length,
+  );
   const [faculty, setFaculty] = useState(initialFaculty);
-  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    setCourseFilesPage(1);
+    setEventReportsPage(1);
+  }, [faculty.id]);
 
   // Load additional faculty profile data on client side
   useEffect(() => {
@@ -81,6 +94,50 @@ export function FacultyProfileView({
     loadFacultyProfile();
   }, [faculty.id]);
 
+  useEffect(() => {
+    const loadPortfolioData = async () => {
+      try {
+        const [filesResponse, reportsResponse] = await Promise.all([
+          fetch(
+            `/api/course-files?facultyId=${encodeURIComponent(faculty.id)}&limit=${pageSize}&offset=${(courseFilesPage - 1) * pageSize}&includeMeta=0&includeFaculty=0&fields=facultyId,fileName,documentUrl,courseCode,courseName,fileType,uploadDate,semester,academicYear,status,auditorRemarks,auditChecklistStatus,auditChecklistFinalized,auditChecklistReport`,
+            { cache: "no-store" },
+          ),
+          fetch(
+            `/api/event-reports?facultyId=${encodeURIComponent(faculty.id)}&limit=${pageSize}&offset=${(eventReportsPage - 1) * pageSize}&includeMeta=0&includeFaculty=0&fields=facultyId,eventName,eventType,eventDate,location,participants,duration,status,facultyCoordinator,community,department,description,objectives,outcomes`,
+            { cache: "no-store" },
+          ),
+        ]);
+
+        const filesData = await filesResponse.json();
+        const reportsData = await reportsResponse.json();
+
+        if (filesResponse.ok) {
+          const scopedFiles: CourseFile[] = filesData.files ?? [];
+          setCourseFiles(scopedFiles);
+          setCourseFilesTotal(
+            typeof filesData.total === "number"
+              ? filesData.total
+              : scopedFiles.length,
+          );
+        }
+
+        if (reportsResponse.ok) {
+          const scopedReports: EventReport[] = reportsData.reports ?? [];
+          setEventReports(scopedReports);
+          setEventReportsTotal(
+            typeof reportsData.total === "number"
+              ? reportsData.total
+              : scopedReports.length,
+          );
+        }
+      } catch (error) {
+        console.error("Load faculty profile portfolio data error:", error);
+      }
+    };
+
+    loadPortfolioData();
+  }, [faculty.id, courseFilesPage, eventReportsPage]);
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case "Approved":
@@ -103,9 +160,21 @@ export function FacultyProfileView({
     setIsFileViewOpen(true);
   };
 
-  const handleViewReport = (report: EventReport) => {
+  const handleViewReport = async (report: EventReport) => {
     setSelectedReport(report);
     setIsReportViewOpen(true);
+
+    try {
+      const response = await fetch(`/api/event-reports/${report.id}`, {
+        cache: "no-store",
+      });
+      const data = await response.json();
+      if (response.ok && data?.report) {
+        setSelectedReport(data.report as EventReport);
+      }
+    } catch (error) {
+      console.error("Load full event report error:", error);
+    }
   };
 
   return (
@@ -127,13 +196,13 @@ export function FacultyProfileView({
       <PortfolioTabs
         courseFiles={courseFiles}
         eventReports={eventReports}
-        courseFilesPage={1}
-        eventReportsPage={1}
-        pageSize={10}
-        totalCourseFiles={courseFiles.length}
-        totalEventReports={eventReports.length}
-        onCourseFilesPageChange={() => {}}
-        onEventReportsPageChange={() => {}}
+        courseFilesPage={courseFilesPage}
+        eventReportsPage={eventReportsPage}
+        pageSize={pageSize}
+        totalCourseFiles={courseFilesTotal}
+        totalEventReports={eventReportsTotal}
+        onCourseFilesPageChange={setCourseFilesPage}
+        onEventReportsPageChange={setEventReportsPage}
         students={[]}
         showStudents={false}
         onViewFile={handleViewFile}
