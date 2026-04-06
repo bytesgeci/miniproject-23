@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { FacultyCard } from "@/components/faculty/FacultyCard";
@@ -18,6 +18,13 @@ export const UserFacultyProfiles = memo(function UserFacultyProfiles({
 }: UserFacultyProfilesProps) {
   const router = useRouter();
   const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE);
+
+  useEffect(() => {
+    const prefetchCandidates = facultyMembers.slice(0, 24);
+    prefetchCandidates.forEach((faculty) => {
+      router.prefetch(`/faculty/${faculty.id}`);
+    });
+  }, [facultyMembers, router]);
 
   const visibleFaculty = useMemo(
     () => facultyMembers.slice(0, visibleCount),

@@ -38,29 +38,33 @@ export default async function FacultyProfilePage({
   params,
 }: FacultyProfilePageProps) {
   const { id } = await params;
-
-  // Get all users
-  const users = await getAllUsers();
   const lookup = normalizeIdentity(id);
 
-  const user = users.find((u) => {
-    const isFaculty =
-      (u.role === "faculty" || u.roles?.includes("faculty")) &&
-      u.role !== "admin";
-    if (!isFaculty) {
-      return false;
-    }
+  const users = await getAllUsers();
 
-    const identities = getUserIdentityVariants({
-      id: String(u.id ?? ""),
-      username: String(u.username ?? ""),
-      email: String(u.email ?? ""),
-      firebaseUid: String(u.firebaseUid ?? ""),
-    });
-    return identities.has(lookup);
-  });
+  const user =
+    users.find((u) => {
+      const isFaculty =
+        (u.role === "faculty" || u.roles?.includes("faculty")) &&
+        u.role !== "admin";
+      if (!isFaculty) {
+        return false;
+      }
 
-  if (!user) {
+      const identities = getUserIdentityVariants({
+        id: String(u.id ?? ""),
+        username: String(u.username ?? ""),
+        email: String(u.email ?? ""),
+        firebaseUid: String(u.firebaseUid ?? ""),
+      });
+      return identities.has(lookup);
+    }) ?? null;
+
+  const isFacultyUser =
+    (user?.role === "faculty" || user?.roles?.includes("faculty")) &&
+    user?.role !== "admin";
+
+  if (!user || !isFacultyUser) {
     notFound();
   }
 
