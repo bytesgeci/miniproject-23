@@ -134,7 +134,11 @@ export const FacultyCard = memo(function FacultyCard({
             variant="outline"
             size="sm"
             className="w-full mt-auto flex items-center justify-center gap-1"
-            onClick={() => onSelect(faculty)}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onSelect(faculty);
+            }}
           >
             View Portfolio
             <ChevronRight className="h-4 w-4" />

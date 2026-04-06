@@ -42,6 +42,11 @@ export default async function FacultyProfilePage({
   // Get all users
   const users = await getAllUsers();
   const lookup = normalizeIdentity(id);
+
+  console.log(
+    `[Faculty Profile] Looking for faculty with ID: "${id}" (normalized: "${lookup}")`,
+  );
+
   const user = users.find((u) => {
     const isFaculty =
       (u.role === "faculty" || u.roles?.includes("faculty")) &&
@@ -60,8 +65,11 @@ export default async function FacultyProfilePage({
   });
 
   if (!user) {
+    console.error(`[Faculty Profile] Faculty not found for ID: "${id}"`);
     notFound();
   }
+
+  console.log(`[Faculty Profile] Found faculty: ${user.name}`);
 
   // Convert user to FacultyMember
   const faculty: FacultyMember = {
