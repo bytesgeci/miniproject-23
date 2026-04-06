@@ -35,6 +35,15 @@ export function middleware(request: NextRequest) {
       return NextResponse.redirect(new URL("/login", request.url));
     }
 
+    // Allow general users to view faculty profile pages from the user dashboard.
+    if (
+      userRole === "user" &&
+      pathname.startsWith("/faculty/") &&
+      pathname !== "/faculty"
+    ) {
+      return NextResponse.next();
+    }
+
     if (userRole !== routeRole) {
       return NextResponse.redirect(
         new URL(getDashboardPath(userRole), request.url),
