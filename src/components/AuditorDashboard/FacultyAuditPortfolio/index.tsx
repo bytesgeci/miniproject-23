@@ -348,6 +348,7 @@ export function FacultyAuditPortfolio({
             email?: string;
             phone?: string;
             experience?: string;
+            profileImageUrl?: string;
             resumeUrl?: string;
             resumeFileName?: string;
           };
@@ -364,6 +365,7 @@ export function FacultyAuditPortfolio({
           email: data.user?.email ?? previous.email,
           phone: data.user?.phone ?? previous.phone,
           experience: data.user?.experience ?? previous.experience,
+          profileImageUrl: data.user?.profileImageUrl ?? "",
           resumeUrl: data.user?.resumeUrl ?? "",
           resumeFileName: data.user?.resumeFileName ?? "",
         }));
