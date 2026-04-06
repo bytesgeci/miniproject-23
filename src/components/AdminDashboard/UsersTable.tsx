@@ -145,14 +145,22 @@ export function UsersTable({
                   <TableRow key={user.id}>
                     <TableCell>
                       <div className="flex items-center gap-3">
-                        <div className="h-10 w-10 bg-linear-to-br from-blue-500 to-purple-500 rounded-full flex items-center justify-center text-white text-sm shrink-0">
-                          {user.name
-                            .split(" ")
-                            .map((part) => part[0])
-                            .filter(Boolean)
-                            .slice(0, 2)
-                            .join("")}
-                        </div>
+                        {user.profileImageUrl ? (
+                          <img
+                            src={user.profileImageUrl}
+                            alt={user.name}
+                            className="h-10 w-10 rounded-full border object-cover shrink-0"
+                          />
+                        ) : (
+                          <div className="h-10 w-10 bg-linear-to-br from-blue-500 to-purple-500 rounded-full flex items-center justify-center text-white text-sm shrink-0">
+                            {user.name
+                              .split(" ")
+                              .map((part) => part[0])
+                              .filter(Boolean)
+                              .slice(0, 2)
+                              .join("")}
+                          </div>
+                        )}
                         <div>
                           <p className="font-medium text-sm">{user.name}</p>
                           <p className="text-xs text-gray-500">{user.email}</p>

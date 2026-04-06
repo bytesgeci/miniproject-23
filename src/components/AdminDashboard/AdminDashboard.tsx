@@ -29,6 +29,7 @@ interface ApiUser {
   department?: string;
   email?: string;
   phone?: string;
+  profileImageUrl?: string;
   resumeUrl?: string;
   resumeFileName?: string;
   status?: string;
@@ -138,6 +139,7 @@ function mapApiUserWithEngagement(
     email: user.email ?? user.username,
     phone: user.phone,
     department: user.department,
+    profileImageUrl: user.profileImageUrl,
     resumeUrl: user.resumeUrl,
     resumeFileName: user.resumeFileName,
     designation: ROLE_LABELS[role],

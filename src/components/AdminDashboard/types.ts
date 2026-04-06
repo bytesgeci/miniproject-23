@@ -22,6 +22,7 @@ export interface AdminUser {
   email: string;
   phone?: string;
   department?: string;
+  profileImageUrl?: string;
   resumeUrl?: string;
   resumeFileName?: string;
   designation?: string;
