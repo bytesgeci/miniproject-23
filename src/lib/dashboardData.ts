@@ -441,10 +441,10 @@ async function buildLocalFacultyDashboardData(
         phone: String(user.phone || ""),
         courses: [] as string[],
         specialization: "",
-        experience: "",
-        profileImageUrl: "",
-        resumeUrl: "",
-        resumeFileName: "",
+        experience: String(user.experience || ""),
+        profileImageUrl: String(user.profileImageUrl || ""),
+        resumeUrl: String(user.resumeUrl || ""),
+        resumeFileName: String(user.resumeFileName || ""),
       };
     });
 
@@ -724,10 +724,10 @@ async function buildLocalDashboardEndpointFallback(endpoint: string) {
           phone: String(user.phone || ""),
           courses: [],
           specialization: "",
-          experience: "",
-          profileImageUrl: "",
-          resumeUrl: "",
-          resumeFileName: "",
+          experience: String(user.experience || ""),
+          profileImageUrl: String(user.profileImageUrl || ""),
+          resumeUrl: String(user.resumeUrl || ""),
+          resumeFileName: String(user.resumeFileName || ""),
         } as FacultyMember;
       });
 
@@ -1132,10 +1132,10 @@ export async function getAuditorDashboardData(): Promise<{
             rejectedReports: 0,
             email: String(user.email || user.username || ""),
             phone: String(user.phone || ""),
-            experience: "",
-            profileImageUrl: "",
-            resumeUrl: "",
-            resumeFileName: "",
+            experience: String(user.experience || ""),
+            profileImageUrl: String(user.profileImageUrl || ""),
+            resumeUrl: String(user.resumeUrl || ""),
+            resumeFileName: String(user.resumeFileName || ""),
           }));
       }
     }
