@@ -24,6 +24,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import type { AdminUser, AdminUserStatus } from "./types";
 
 interface UsersTableProps {
@@ -56,6 +64,29 @@ function getStatusColor(status: AdminUserStatus) {
     default:
       return "bg-gray-100 text-gray-700";
   }
+}
+
+function hasExtension(value: string | undefined, extension: string) {
+  if (!value) {
+    return false;
+  }
+
+  const normalized = value.split("?")[0].split("#")[0].toLowerCase();
+  return normalized.endsWith(extension);
+}
+
+function getPdfPreviewUrl(url: string) {
+  const hashIndex = url.indexOf("#");
+
+  if (hashIndex >= 0) {
+    const existingHash = url.slice(hashIndex + 1).toLowerCase();
+    if (existingHash.includes("zoom=") || existingHash.includes("view=")) {
+      return url;
+    }
+    return url + "&zoom=page-width&view=FitH";
+  }
+
+  return url + "#zoom=page-width&view=FitH";
 }
 
 export function UsersTable({
@@ -203,15 +234,50 @@ export function UsersTable({
                     </TableCell>
                     <TableCell>
                       {user.resumeUrl ? (
-                        <a
-                          href={user.resumeUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 text-blue-600 hover:underline text-sm"
-                        >
-                          <FileText className="h-3.5 w-3.5" />
-                          {user.resumeFileName || "View"}
-                        </a>
+                        <Dialog>
+                          <DialogTrigger asChild>
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-1 text-blue-600 hover:underline text-sm"
+                            >
+                              <FileText className="h-3.5 w-3.5" />
+                              {user.resumeFileName || "View"}
+                            </button>
+                          </DialogTrigger>
+                          <DialogContent className="w-[96vw]! max-w-[96vw]! sm:w-[92vw]! sm:max-w-[92vw]! lg:w-[82vw]! lg:max-w-[82vw]! xl:w-[78vw]! xl:max-w-[78vw]! 2xl:w-[75vw]! 2xl:max-w-[75vw]!">
+                            <DialogHeader>
+                              <DialogTitle>Resume Preview</DialogTitle>
+                              <DialogDescription>
+                                {user.name}&apos;s resume
+                              </DialogDescription>
+                            </DialogHeader>
+
+                            {hasExtension(user.resumeFileName, ".pdf") ||
+                            hasExtension(user.resumeUrl, ".pdf") ? (
+                              <iframe
+                                src={getPdfPreviewUrl(user.resumeUrl)}
+                                title="Resume preview"
+                                className="h-[82vh] w-full rounded-md border border-slate-200"
+                              />
+                            ) : (
+                              <div className="rounded-md border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+                                Preview is available for PDF files. Please open
+                                the file in a new tab to view this format.
+                              </div>
+                            )}
+
+                            <div className="flex justify-end">
+                              <a
+                                href={user.resumeUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-sm font-medium text-blue-700 underline-offset-2 hover:text-blue-800 hover:underline"
+                              >
+                                Open in new tab
+                              </a>
+                            </div>
+                          </DialogContent>
+                        </Dialog>
                       ) : (
                         <span className="text-sm text-gray-500">-</span>
                       )}
