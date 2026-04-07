@@ -68,12 +68,21 @@ interface AuditorMessage {
 }
 
 const DEFAULT_COMMUNITY_OPTIONS = [
-  "Community Outreach",
-  "Health Awareness",
-  "Education Support",
-  "Environmental Initiative",
-  "Skill Development",
-  "Other",
+  "National Service Scheme(NSS)",
+  "Oasis",
+  "IEEE CS",
+  "IEEE RAS",
+  "IEEE WIE",
+  "IEEE PES",
+  "IEEE MTTS",
+  "Women Cell",
+  "MuLearn",
+  "FOSS Cell",
+  "Tinkerers Lab",
+  "SAE",
+  "Technoship Cell",
+  "GDG",
+  "TinkerHub",
 ];
 
 function normalizeCommunityOptions(values: Array<string | undefined | null>) {
