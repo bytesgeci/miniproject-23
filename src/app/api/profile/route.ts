@@ -207,11 +207,19 @@ export async function PATCH(request: NextRequest) {
     const { password, ...safeUser } = updatedUser;
 
     if (nameChanged) {
-      await createAdminNotification({
-        type: "info",
-        message: `Faculty ${currentName || user.username || userId} changed name to ${normalizedName}.`,
-        userId,
-      });
+      try {
+        await createAdminNotification({
+          type: "info",
+          message: `Faculty ${currentName || user.username || userId} changed name to ${normalizedName}.`,
+          userId,
+        });
+      } catch (notificationError) {
+        // Profile update should succeed even if notification persistence fails.
+        console.error(
+          "Admin notification create error during profile update:",
+          notificationError,
+        );
+      }
     }
 
     invalidateCachedProfile(`profile:${userId}`);
