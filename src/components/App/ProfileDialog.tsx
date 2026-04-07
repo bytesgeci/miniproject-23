@@ -121,7 +121,7 @@ export function ProfileDialog() {
   const updateUserProfile =
     typeof auth.updateUserProfile === "function"
       ? auth.updateUserProfile
-      : (patch: { profileImageUrl?: string }) => {
+      : (patch: Record<string, unknown>) => {
           if (!user) {
             return;
           }
@@ -339,19 +339,29 @@ export function ProfileDialog() {
         },
         body: JSON.stringify({
           userId: user.id,
+          name: form.name.trim(),
           email: normalizedEmail,
           phone: form.phone.trim(),
           experience: form.experience.trim(),
         }),
       });
 
-      const data = (await response.json()) as { error?: string };
+      const data = (await response.json()) as {
+        error?: string;
+        user?: ProfileApiUser;
+      };
       if (!response.ok) {
         toast.error(data.error || "Failed to update profile");
         return;
       }
 
       toast.success("Profile updated successfully");
+      if (data.user) {
+        updateUserProfile({
+          name: data.user.name ?? form.name.trim(),
+          email: data.user.email ?? normalizedEmail,
+        });
+      }
       profileDialogCache.delete(String(user.id));
       if (typeof window !== "undefined") {
         window.dispatchEvent(new Event("dashboard:data-updated"));
@@ -721,15 +731,17 @@ export function ProfileDialog() {
           </div>
         ) : (
           <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Name</Label>
-                <Input value={form.name} disabled />
-              </div>
-              <div className="space-y-2">
-                <Label>Username</Label>
-                <Input value={form.username} disabled />
-              </div>
+            <div className="space-y-2">
+              <Label htmlFor="profile-name">Name</Label>
+              <Input
+                id="profile-name"
+                type="text"
+                placeholder="Enter your name"
+                value={form.name}
+                onChange={(e) =>
+                  setForm((prev) => ({ ...prev, name: e.target.value }))
+                }
+              />
             </div>
 
             <div className="space-y-2">

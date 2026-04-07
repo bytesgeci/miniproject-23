@@ -306,6 +306,52 @@ export function AdminDashboard() {
     setNotifications((prev) => [notification, ...prev]);
   };
 
+  const fetchAdminNotifications = async () => {
+    try {
+      const response = await fetch("/api/admin/notifications", {
+        cache: "no-store",
+      });
+      const data = (await response.json()) as {
+        notifications?: NotificationData[];
+      };
+
+      if (!response.ok || !Array.isArray(data.notifications)) {
+        return;
+      }
+
+      const next = data.notifications.map((notification) => ({
+        ...notification,
+        timestamp: notification.timestamp
+          ? new Date(notification.timestamp).toLocaleString()
+          : "Recently",
+      }));
+
+      setNotifications((prev) => {
+        const byId = new Map<string, NotificationData>();
+        [...prev, ...next].forEach((item) => {
+          byId.set(item.id, item);
+        });
+        return [...byId.values()];
+      });
+    } catch (error) {
+      console.error("Admin notifications fetch error:", error);
+    }
+  };
+
+  useEffect(() => {
+    void fetchAdminNotifications();
+
+    const intervalId = window.setInterval(() => {
+      if (!document.hidden) {
+        void fetchAdminNotifications();
+      }
+    }, 30000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, []);
+
   const updateUser = async (id: string, payload: Partial<ApiUser>) => {
     try {
       const response = await fetch(`/api/users/${id}`, {
@@ -407,10 +453,22 @@ export function AdminDashboard() {
     setNotifications((prev) =>
       prev.map((n) => (n.id === notificationId ? { ...n, read: true } : n)),
     );
+
+    void fetch("/api/admin/notifications", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: notificationId }),
+    });
   };
 
   const markAllAsRead = () => {
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+
+    void fetch("/api/admin/notifications", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ markAllRead: true }),
+    });
   };
 
   return (

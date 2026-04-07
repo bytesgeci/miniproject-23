@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { adminAuth } from "@/lib/firebaseAdmin";
 import { findUserById, updateUserById } from "@/lib/userStore";
 import { isPrimaryAdminEmail } from "@/lib/adminConfig";
+import { createAdminNotification } from "@/lib/adminNotifications";
 import {
   getCachedProfile,
   invalidateCachedProfile,
@@ -104,6 +105,7 @@ export async function PATCH(request: NextRequest) {
   try {
     const body = (await request.json()) as {
       userId?: string;
+      name?: string;
       email?: string;
       phone?: string;
       experience?: string;
@@ -136,6 +138,12 @@ export async function PATCH(request: NextRequest) {
     }
 
     const normalizedEmail = normalizeEmail(String(body.email || ""));
+    const normalizedName = String(body.name || "").trim();
+
+    if (!normalizedName) {
+      return NextResponse.json({ error: "Name is required" }, { status: 400 });
+    }
+
     if (!normalizedEmail || !EMAIL_REGEX.test(normalizedEmail)) {
       return NextResponse.json(
         { error: "A valid email is required" },
@@ -145,6 +153,8 @@ export async function PATCH(request: NextRequest) {
 
     const currentEmail = normalizeEmail(String(user.email || ""));
     const emailChanged = normalizedEmail !== currentEmail;
+    const currentName = String(user.name || "").trim();
+    const nameChanged = normalizedName !== currentName;
 
     if (
       emailChanged &&
@@ -183,6 +193,7 @@ export async function PATCH(request: NextRequest) {
 
     dbStart = Date.now();
     const updatedUser = await updateUserById(userId, {
+      name: normalizedName,
       email: normalizedEmail,
       phone: String(body.phone || "").trim(),
       experience: String(body.experience || "").trim(),
@@ -194,6 +205,15 @@ export async function PATCH(request: NextRequest) {
     }
 
     const { password, ...safeUser } = updatedUser;
+
+    if (nameChanged) {
+      await createAdminNotification({
+        type: "info",
+        message: `Faculty ${currentName || user.username || userId} changed name to ${normalizedName}.`,
+        userId,
+      });
+    }
+
     invalidateCachedProfile(`profile:${userId}`);
     setCachedProfile(`profile:${userId}`, safeUser, 60_000);
 
