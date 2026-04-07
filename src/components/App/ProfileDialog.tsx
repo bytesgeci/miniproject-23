@@ -359,7 +359,6 @@ export function ProfileDialog() {
       if (data.user) {
         updateUserProfile({
           name: data.user.name ?? form.name.trim(),
-          email: data.user.email ?? normalizedEmail,
         });
       }
       profileDialogCache.delete(String(user.id));
