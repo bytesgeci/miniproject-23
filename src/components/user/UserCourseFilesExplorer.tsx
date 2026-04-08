@@ -289,6 +289,30 @@ export function UserCourseFilesExplorer({
     }, 0);
   };
 
+  const openMergedPreviewForCourse = (
+    courseGroup: CourseGroup,
+    semesterScope: string,
+  ) => {
+    const isSameSelection =
+      selectedCourseGroup?.key === courseGroup.key &&
+      selectedCourseScope === semesterScope;
+
+    if (!isSameSelection) {
+      setSelectedCourseGroup(courseGroup);
+      setSelectedCourseScope(semesterScope);
+    }
+
+    // Always open previews for the target course immediately.
+    setShowMergedPreview(true);
+    setPreviewRenderReady(false);
+    if (previewRenderTimerRef.current !== null) {
+      window.clearTimeout(previewRenderTimerRef.current);
+    }
+    previewRenderTimerRef.current = window.setTimeout(() => {
+      setPreviewRenderReady(true);
+    }, 0);
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50/70 p-4 shadow-sm">
@@ -422,8 +446,11 @@ export function UserCourseFilesExplorer({
                               </p>
                               <div className="mt-3 flex justify-end gap-2">
                                 <Button
+                                  type="button"
                                   size="sm"
-                                  onClick={() => {
+                                  onClick={(event) => {
+                                    event.preventDefault();
+                                    event.stopPropagation();
                                     const isSameSelection =
                                       selectedCourseGroup?.key ===
                                         courseGroup.key &&
@@ -450,17 +477,35 @@ export function UserCourseFilesExplorer({
                                     : "View Checklist"}
                                 </Button>
 
-                                {selectedCourseGroup?.key === courseGroup.key &&
-                                  selectedCourseScope === semesterScope && (
-                                    <Button
-                                      size="sm"
-                                      onClick={toggleMergedPreview}
-                                    >
-                                      {showMergedPreview
-                                        ? "Hide All Documents"
-                                        : "Preview All Documents"}
-                                    </Button>
-                                  )}
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  onClick={(event) => {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    const isSameSelection =
+                                      selectedCourseGroup?.key ===
+                                        courseGroup.key &&
+                                      selectedCourseScope === semesterScope;
+
+                                    if (isSameSelection && showMergedPreview) {
+                                      toggleMergedPreview();
+                                      return;
+                                    }
+
+                                    openMergedPreviewForCourse(
+                                      courseGroup,
+                                      semesterScope,
+                                    );
+                                  }}
+                                >
+                                  {selectedCourseGroup?.key ===
+                                    courseGroup.key &&
+                                  selectedCourseScope === semesterScope &&
+                                  showMergedPreview
+                                    ? "Hide All Documents"
+                                    : "Preview All Documents"}
+                                </Button>
                               </div>
                             </div>
                           ))}

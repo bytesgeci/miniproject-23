@@ -7,6 +7,7 @@ import type {
   FacultyMember,
   RecentReview,
 } from "@/components/AuditorDashboard/types";
+import { fetchJsonCached } from "@/lib/clientFetchCache";
 
 const EMPTY_STATS: DashboardStats = {
   totalFaculty: 0,
@@ -21,6 +22,12 @@ const EMPTY_STATS: DashboardStats = {
   completionRate: 0,
 };
 
+interface AuditorDashboardResponse {
+  stats?: DashboardStats;
+  facultyMembers?: FacultyMember[];
+  recentReviews?: RecentReview[];
+}
+
 export default function AuditorDashboardPage() {
   const [stats, setStats] = useState<DashboardStats>(EMPTY_STATS);
   const [facultyMembers, setFacultyMembers] = useState<FacultyMember[]>([]);
@@ -33,13 +40,16 @@ export default function AuditorDashboardPage() {
 
     const load = async () => {
       try {
-        const response = await fetch("/api/dashboard/auditor", {
-          signal: controller.signal,
-          cache: "no-store",
-        });
-        const data = await response.json();
+        const data = await fetchJsonCached<AuditorDashboardResponse>(
+          "dashboard:auditor",
+          "/api/dashboard/auditor",
+          {
+            ttlMs: 20_000,
+            signal: controller.signal,
+          },
+        );
 
-        if (!response.ok || !isActive) {
+        if (!isActive) {
           return;
         }
 

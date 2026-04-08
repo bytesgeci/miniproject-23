@@ -9,6 +9,7 @@ import type {
   DashboardStats,
   Student,
 } from "@/components/StaffAdvisorDashboard/types";
+import { fetchJsonCached } from "@/lib/clientFetchCache";
 
 const EMPTY_STATS: DashboardStats = {
   totalStudents: 0,
@@ -42,6 +43,13 @@ const EMPTY_BATCH_OVERVIEW: BatchCourseOverview = {
   groups: [],
 };
 
+interface StaffAdvisorDashboardResponse {
+  stats?: DashboardStats;
+  careerStats?: CareerStats;
+  students?: Student[];
+  batchCourseOverview?: BatchCourseOverview;
+}
+
 export default function StaffAdvisorDashboardPage() {
   const { user } = useAuth();
   const [stats, setStats] = useState<DashboardStats>(EMPTY_STATS);
@@ -66,13 +74,16 @@ export default function StaffAdvisorDashboardPage() {
 
     const load = async () => {
       try {
-        const response = await fetch(requestUrl, {
-          signal: controller.signal,
-          cache: "no-store",
-        });
-        const data = await response.json();
+        const data = await fetchJsonCached<StaffAdvisorDashboardResponse>(
+          `dashboard:staff-advisor:${requestUrl}`,
+          requestUrl,
+          {
+            ttlMs: 20_000,
+            signal: controller.signal,
+          },
+        );
 
-        if (!response.ok || !isActive) {
+        if (!isActive) {
           return;
         }
 

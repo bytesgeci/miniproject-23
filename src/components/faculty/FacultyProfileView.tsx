@@ -15,11 +15,32 @@ import { ProfileHeader } from "@/components/FacultyDashboard/FacultyPortfolio/Pr
 import { PortfolioTabs } from "@/components/FacultyDashboard/FacultyPortfolio/PortfolioTabs";
 import { FileViewDialog } from "@/components/FacultyDashboard/FacultyPortfolio/FileViewDialog";
 import { ReportViewDialog } from "@/components/FacultyDashboard/FacultyPortfolio/ReportViewDialog";
+import { fetchJsonCached } from "@/lib/clientFetchCache";
 
 interface FacultyProfileViewProps {
   faculty: FacultyMember;
   courseFiles: CourseFile[];
   eventReports: EventReport[];
+}
+
+interface ProfileResponse {
+  user?: {
+    name?: string;
+    department?: string;
+    email?: string;
+    phone?: string;
+    experience?: string;
+    profileImageUrl?: string;
+    resumeUrl?: string;
+    resumeFileName?: string;
+  };
+}
+
+interface PortfolioResponse {
+  files?: CourseFile[];
+  reports?: EventReport[];
+  totalFiles?: number;
+  totalReports?: number;
 }
 
 export function FacultyProfileView({
@@ -56,26 +77,13 @@ export function FacultyProfileView({
   useEffect(() => {
     const loadFacultyProfile = async () => {
       try {
-        const response = await fetch(
+        const data = await fetchJsonCached<ProfileResponse>(
+          `profile:${faculty.id}`,
           `/api/profile?userId=${encodeURIComponent(faculty.id)}`,
-          {
-            cache: "no-store",
-          },
+          { ttlMs: 60_000 },
         );
-        const data = (await response.json()) as {
-          user?: {
-            name?: string;
-            department?: string;
-            email?: string;
-            phone?: string;
-            experience?: string;
-            profileImageUrl?: string;
-            resumeUrl?: string;
-            resumeFileName?: string;
-          };
-        };
 
-        if (response.ok && data.user) {
+        if (data.user) {
           setFaculty((prev) => ({
             ...prev,
             name: data.user?.name ?? prev.name,
@@ -119,31 +127,27 @@ export function FacultyProfileView({
           query.set("facultyName", faculty.name);
         }
 
-        const response = await fetch(
+        const cacheKey = `faculty-portfolio:${query.toString()}`;
+        const data = await fetchJsonCached<PortfolioResponse>(
+          cacheKey,
           `/api/faculty-portfolio?${query.toString()}`,
-          {
-            cache: "no-store",
-          },
+          { ttlMs: 20_000 },
         );
+        const scopedFiles: CourseFile[] = data.files ?? [];
+        const scopedReports: EventReport[] = data.reports ?? [];
 
-        const data = await response.json();
-        if (response.ok) {
-          const scopedFiles: CourseFile[] = data.files ?? [];
-          const scopedReports: EventReport[] = data.reports ?? [];
-
-          setCourseFiles(scopedFiles);
-          setEventReports(scopedReports);
-          setCourseFilesTotal(
-            typeof data.totalFiles === "number"
-              ? data.totalFiles
-              : scopedFiles.length,
-          );
-          setEventReportsTotal(
-            typeof data.totalReports === "number"
-              ? data.totalReports
-              : scopedReports.length,
-          );
-        }
+        setCourseFiles(scopedFiles);
+        setEventReports(scopedReports);
+        setCourseFilesTotal(
+          typeof data.totalFiles === "number"
+            ? data.totalFiles
+            : scopedFiles.length,
+        );
+        setEventReportsTotal(
+          typeof data.totalReports === "number"
+            ? data.totalReports
+            : scopedReports.length,
+        );
       } catch (error) {
         console.error("Load faculty profile portfolio data error:", error);
       } finally {
@@ -176,11 +180,12 @@ export function FacultyProfileView({
     setIsFileViewOpen(true);
 
     try {
-      const response = await fetch(`/api/course-files/${file.id}`, {
-        cache: "no-store",
-      });
-      const data = await response.json();
-      if (response.ok && data?.file) {
+      const data = await fetchJsonCached<{ file?: CourseFile }>(
+        `course-file:${file.id}`,
+        `/api/course-files/${file.id}`,
+        { ttlMs: 60_000 },
+      );
+      if (data?.file) {
         setSelectedFile(data.file as CourseFile);
       }
     } catch (error) {
@@ -193,11 +198,12 @@ export function FacultyProfileView({
     setIsReportViewOpen(true);
 
     try {
-      const response = await fetch(`/api/event-reports/${report.id}`, {
-        cache: "no-store",
-      });
-      const data = await response.json();
-      if (response.ok && data?.report) {
+      const data = await fetchJsonCached<{ report?: EventReport }>(
+        `event-report:${report.id}`,
+        `/api/event-reports/${report.id}`,
+        { ttlMs: 60_000 },
+      );
+      if (data?.report) {
         setSelectedReport(data.report as EventReport);
       }
     } catch (error) {
