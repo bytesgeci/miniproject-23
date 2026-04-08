@@ -42,11 +42,11 @@ export function FileViewDialog({
   const viewerIdentities = useMemo(
     () =>
       new Set(
-        [user?.id, user?.username, user?.email, user?.firebaseUid, user?.name]
+        [user?.id, user?.username, user?.name]
           .map((value) => normalizeIdentity(value))
           .filter(Boolean),
       ),
-    [user?.email, user?.firebaseUid, user?.id, user?.name, user?.username],
+    [user?.id, user?.name, user?.username],
   );
 
   const isResponsibleFaculty =
