@@ -243,6 +243,9 @@ export function UserCourseFilesExplorer({
   const [selectedCourseGroup, setSelectedCourseGroup] =
     useState<CourseGroup | null>(null);
   const [selectedCourseScope, setSelectedCourseScope] = useState<string>("");
+  const [selectedPreviewGroup, setSelectedPreviewGroup] =
+    useState<CourseGroup | null>(null);
+  const [selectedPreviewScope, setSelectedPreviewScope] = useState<string>("");
   const [showMergedPreview, setShowMergedPreview] = useState(false);
   const [previewRenderReady, setPreviewRenderReady] = useState(false);
   const [visibleCountBySemester, setVisibleCountBySemester] = useState<
@@ -266,43 +269,28 @@ export function UserCourseFilesExplorer({
       selectedCourseGroup ? buildChecklistEntries(selectedCourseGroup) : [],
     [selectedCourseGroup],
   );
+  const selectedPreviewFiles = useMemo(
+    () => selectedPreviewGroup?.files ?? [],
+    [selectedPreviewGroup],
+  );
 
-  const toggleMergedPreview = () => {
-    if (showMergedPreview) {
-      setShowMergedPreview(false);
-      setPreviewRenderReady(false);
-      if (previewRenderTimerRef.current !== null) {
-        window.clearTimeout(previewRenderTimerRef.current);
-        previewRenderTimerRef.current = null;
-      }
-      return;
-    }
-
-    // Flip button state immediately, then defer heavy preview render.
-    setShowMergedPreview(true);
+  const closeMergedPreview = () => {
+    setShowMergedPreview(false);
     setPreviewRenderReady(false);
     if (previewRenderTimerRef.current !== null) {
       window.clearTimeout(previewRenderTimerRef.current);
+      previewRenderTimerRef.current = null;
     }
-    previewRenderTimerRef.current = window.setTimeout(() => {
-      setPreviewRenderReady(true);
-    }, 0);
+    setSelectedPreviewGroup(null);
+    setSelectedPreviewScope("");
   };
 
   const openMergedPreviewForCourse = (
     courseGroup: CourseGroup,
     semesterScope: string,
   ) => {
-    const isSameSelection =
-      selectedCourseGroup?.key === courseGroup.key &&
-      selectedCourseScope === semesterScope;
-
-    if (!isSameSelection) {
-      setSelectedCourseGroup(courseGroup);
-      setSelectedCourseScope(semesterScope);
-    }
-
-    // Always open previews for the target course immediately.
+    setSelectedPreviewGroup(courseGroup);
+    setSelectedPreviewScope(semesterScope);
     setShowMergedPreview(true);
     setPreviewRenderReady(false);
     if (previewRenderTimerRef.current !== null) {
@@ -332,8 +320,7 @@ export function UserCourseFilesExplorer({
               setOpenSemester("");
               setSelectedCourseGroup(null);
               setSelectedCourseScope("");
-              setShowMergedPreview(false);
-              setPreviewRenderReady(false);
+              closeMergedPreview();
             }}
           >
             Back to Batches
@@ -360,8 +347,7 @@ export function UserCourseFilesExplorer({
                     setOpenSemester("");
                     setSelectedCourseGroup(null);
                     setSelectedCourseScope("");
-                    setShowMergedPreview(false);
-                    setPreviewRenderReady(false);
+                    closeMergedPreview();
                   }}
                   className="rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300"
                 >
@@ -477,12 +463,12 @@ export function UserCourseFilesExplorer({
                                     event.preventDefault();
                                     event.stopPropagation();
                                     const isSameSelection =
-                                      selectedCourseGroup?.key ===
+                                      selectedPreviewGroup?.key ===
                                         courseGroup.key &&
-                                      selectedCourseScope === semesterScope;
+                                      selectedPreviewScope === semesterScope;
 
                                     if (isSameSelection && showMergedPreview) {
-                                      toggleMergedPreview();
+                                      closeMergedPreview();
                                       return;
                                     }
 
@@ -551,85 +537,93 @@ export function UserCourseFilesExplorer({
                                     No checklist details available.
                                   </p>
                                 )}
+                              </div>
+                            )}
 
-                                {showMergedPreview && !previewRenderReady && (
+                          {showMergedPreview &&
+                            selectedPreviewGroup &&
+                            selectedPreviewScope === semesterScope && (
+                              <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <p className="text-sm font-semibold text-slate-900">
+                                    Documents -{" "}
+                                    {selectedPreviewGroup.courseCode} -{" "}
+                                    {selectedPreviewGroup.courseName}
+                                  </p>
+                                </div>
+
+                                {!previewRenderReady && (
                                   <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
                                     Preparing previews...
                                   </div>
                                 )}
 
-                                {showMergedPreview && previewRenderReady && (
+                                {previewRenderReady && (
                                   <div className="mt-4 space-y-4">
-                                    {selectedCourseGroup.files.map(
-                                      (courseFile) => {
-                                        const documentUrl =
-                                          getDocumentUrl(courseFile);
-                                        const lowerName =
-                                          courseFile.fileName.toLowerCase();
-                                        const isImage =
-                                          lowerName.endsWith(".png") ||
-                                          lowerName.endsWith(".jpg") ||
-                                          lowerName.endsWith(".jpeg") ||
-                                          lowerName.endsWith(".webp") ||
-                                          lowerName.endsWith(".gif");
+                                    {selectedPreviewFiles.map((courseFile) => {
+                                      const documentUrl =
+                                        getDocumentUrl(courseFile);
+                                      const lowerName =
+                                        courseFile.fileName.toLowerCase();
+                                      const isImage =
+                                        lowerName.endsWith(".png") ||
+                                        lowerName.endsWith(".jpg") ||
+                                        lowerName.endsWith(".jpeg") ||
+                                        lowerName.endsWith(".webp") ||
+                                        lowerName.endsWith(".gif");
 
-                                        return (
-                                          <div
-                                            key={courseFile.id}
-                                            className="rounded-lg border border-slate-200 bg-slate-50 p-3"
-                                          >
-                                            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                                              <p className="text-sm font-medium text-slate-900">
-                                                {courseFile.fileName}
-                                              </p>
-                                              <Button
-                                                variant="outline"
-                                                size="sm"
-                                                disabled={!documentUrl}
-                                                onClick={() => {
-                                                  if (!documentUrl) return;
-                                                  const link =
-                                                    document.createElement("a");
-                                                  link.href = documentUrl;
-                                                  link.download =
-                                                    courseFile.fileName;
-                                                  document.body.appendChild(
-                                                    link,
-                                                  );
-                                                  link.click();
-                                                  document.body.removeChild(
-                                                    link,
-                                                  );
-                                                }}
-                                              >
-                                                Download
-                                              </Button>
-                                            </div>
-
-                                            {documentUrl ? (
-                                              isImage ? (
-                                                <img
-                                                  src={documentUrl}
-                                                  alt={courseFile.fileName}
-                                                  className="max-h-125 w-full rounded border object-contain bg-white"
-                                                />
-                                              ) : (
-                                                <iframe
-                                                  src={documentUrl}
-                                                  title={courseFile.fileName}
-                                                  className="h-150 w-full rounded border bg-white"
-                                                />
-                                              )
-                                            ) : (
-                                              <p className="text-sm text-slate-600">
-                                                Document preview is not
-                                                available for this file.
-                                              </p>
-                                            )}
+                                      return (
+                                        <div
+                                          key={courseFile.id}
+                                          className="rounded-lg border border-slate-200 bg-slate-50 p-3"
+                                        >
+                                          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                                            <p className="text-sm font-medium text-slate-900">
+                                              {courseFile.fileName}
+                                            </p>
+                                            <Button
+                                              variant="outline"
+                                              size="sm"
+                                              disabled={!documentUrl}
+                                              onClick={() => {
+                                                if (!documentUrl) return;
+                                                const link =
+                                                  document.createElement("a");
+                                                link.href = documentUrl;
+                                                link.download =
+                                                  courseFile.fileName;
+                                                document.body.appendChild(link);
+                                                link.click();
+                                                document.body.removeChild(link);
+                                              }}
+                                            >
+                                              Download
+                                            </Button>
                                           </div>
-                                        );
-                                      },
-                                    )}
+
+                                          {documentUrl ? (
+                                            isImage ? (
+                                              <img
+                                                src={documentUrl}
+                                                alt={courseFile.fileName}
+                                                className="max-h-125 w-full rounded border object-contain bg-white"
+                                              />
+                                            ) : (
+                                              <iframe
+                                                src={documentUrl}
+                                                title={courseFile.fileName}
+                                                className="h-150 w-full rounded border bg-white"
+                                              />
+                                            )
+                                          ) : (
+                                            <p className="text-sm text-slate-600">
+                                              Document preview is not available
+                                              for this file.
+                                            </p>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
                                   </div>
                                 )}
                               </div>
