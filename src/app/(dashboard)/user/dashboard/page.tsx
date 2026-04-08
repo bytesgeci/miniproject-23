@@ -9,10 +9,48 @@ import { CalendarDays, FileText, Users } from "lucide-react";
 
 export const revalidate = 30;
 
+interface CourseFileRecord {
+  facultyId?: unknown;
+  uploadedBy?: unknown;
+  uploadedById?: unknown;
+  facultyEmail?: unknown;
+  email?: unknown;
+  username?: unknown;
+  facultyName?: unknown;
+  courseCode?: unknown;
+  courseName?: unknown;
+}
+
+function normalizeIdentity(value: unknown) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase();
+}
+
+function buildIdentitySet(values: unknown[]) {
+  const identities = new Set<string>();
+
+  values.forEach((value) => {
+    const normalized = normalizeIdentity(value);
+    if (normalized) {
+      identities.add(normalized);
+    }
+  });
+
+  return identities;
+}
+
+function toCourseLabel(record: CourseFileRecord) {
+  const code = String(record.courseCode ?? "").trim();
+  const name = String(record.courseName ?? "").trim();
+  return [code, name].filter(Boolean).join(" - ");
+}
+
 export default async function UserDashboardPage() {
-  const [users, sectionCounts] = await Promise.all([
+  const [users, sectionCounts, courseFiles] = await Promise.all([
     getAllUsers(),
     getUserSectionCounts(),
+    readJsonFile<CourseFileRecord[]>("courseFiles.json").catch(() => []),
   ]);
   const { approvedCourseCodesCount, eventReportsCount, studentsCount } =
     sectionCounts;
@@ -32,7 +70,51 @@ export default async function UserDashboardPage() {
       isStaffAdvisor: user.roles?.includes("staff-advisor") ?? false,
       email: user.email ?? user.username ?? "N/A",
       phone: user.phone ?? "N/A",
-      courses: Array.isArray(user.courses) ? user.courses : [],
+      courses: (() => {
+        const userIdentitySet = buildIdentitySet([
+          user.id,
+          user.username,
+          user.email,
+          user.firebaseUid,
+        ]);
+
+        const normalizedName = normalizeIdentity(user.name);
+        const courseSet = new Set<string>();
+
+        (courseFiles || []).forEach((file) => {
+          const fileIdentities = buildIdentitySet([
+            file.facultyId,
+            file.uploadedBy,
+            file.uploadedById,
+            file.facultyEmail,
+            file.email,
+            file.username,
+          ]);
+
+          const byIdentity = [...fileIdentities].some((idValue) =>
+            userIdentitySet.has(idValue),
+          );
+
+          const byName =
+            normalizedName &&
+            normalizeIdentity(file.facultyName) === normalizedName;
+
+          if (!byIdentity && !byName) {
+            return;
+          }
+
+          const label = toCourseLabel(file);
+          if (label) {
+            courseSet.add(label);
+          }
+        });
+
+        if (courseSet.size > 0) {
+          return [...courseSet].sort((a, b) => a.localeCompare(b));
+        }
+
+        return Array.isArray(user.courses) ? user.courses : [];
+      })(),
       specialization: user.specialization ?? "General",
       experience: user.experience ?? "",
       profileImageUrl: user.profileImageUrl ?? "",
