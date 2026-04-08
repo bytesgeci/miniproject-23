@@ -444,10 +444,11 @@ export function UserCourseFilesExplorer({
                                 Click to view one shared checklist for this
                                 course.
                               </p>
-                              <div className="mt-3 flex justify-end gap-2">
+                              <div className="mt-3 flex flex-wrap items-center justify-end gap-2">
                                 <Button
                                   type="button"
                                   size="sm"
+                                  variant="outline"
                                   onClick={(event) => {
                                     event.preventDefault();
                                     event.stopPropagation();
@@ -470,11 +471,7 @@ export function UserCourseFilesExplorer({
                                     setPreviewRenderReady(false);
                                   }}
                                 >
-                                  {selectedCourseGroup?.key ===
-                                    courseGroup.key &&
-                                  selectedCourseScope === semesterScope
-                                    ? "Hide Checklist"
-                                    : "View Checklist"}
+                                  Show Checklist
                                 </Button>
 
                                 <Button
@@ -499,12 +496,7 @@ export function UserCourseFilesExplorer({
                                     );
                                   }}
                                 >
-                                  {selectedCourseGroup?.key ===
-                                    courseGroup.key &&
-                                  selectedCourseScope === semesterScope &&
-                                  showMergedPreview
-                                    ? "Hide All Documents"
-                                    : "Preview All Documents"}
+                                  Preview Documents
                                 </Button>
                               </div>
                             </div>
