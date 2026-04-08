@@ -74,6 +74,62 @@ function getDocumentUrl(file: CourseFileRecord) {
   return file.documentUrl || file.fileUrl || file.filePath || "";
 }
 
+function normalizeChecklistStatus(
+  value: unknown,
+): AuditChecklistStatus | undefined {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
+
+  if (normalized === "yes" || normalized === "no" || normalized === "pending") {
+    return normalized;
+  }
+
+  return undefined;
+}
+
+function toChecklistId(label: string, index: number) {
+  const normalized = label
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+  return normalized || `item-${index + 1}`;
+}
+
+function buildChecklistEntries(files: CourseFileRecord[]) {
+  const reportChecklist = files.find(
+    (courseFile) => courseFile.auditChecklistReport?.checklist?.length,
+  )?.auditChecklistReport?.checklist;
+
+  if (Array.isArray(reportChecklist) && reportChecklist.length > 0) {
+    return reportChecklist;
+  }
+
+  const statusByLabel = new Map<string, AuditChecklistStatus>();
+
+  files.forEach((file) => {
+    const label = String(file.fileType || "").trim();
+    if (!label) {
+      return;
+    }
+
+    const normalizedStatus =
+      normalizeChecklistStatus(file.auditChecklistStatus) || "pending";
+
+    // Preserve first non-pending value seen for a file type.
+    if (!statusByLabel.has(label) || statusByLabel.get(label) === "pending") {
+      statusByLabel.set(label, normalizedStatus);
+    }
+  });
+
+  return Array.from(statusByLabel.entries()).map(([label, status], index) => ({
+    id: toChecklistId(label, index),
+    label,
+    status,
+  }));
+}
+
 function groupFilesByCourse(files: CourseFileRecord[]): CourseGroup[] {
   const grouped = files.reduce<Record<string, CourseGroup>>((acc, file) => {
     const courseCode = file.courseCode || "Unknown";
@@ -315,39 +371,29 @@ export function UserCourseFilesExplorer({
                                   </Button>
                                 </div>
 
-                                {(
-                                  selectedCourseGroup.files.find(
-                                    (courseFile) =>
-                                      courseFile.auditChecklistReport?.checklist
-                                        ?.length,
-                                  )?.auditChecklistReport?.checklist ?? []
-                                )?.length ? (
+                                {buildChecklistEntries(
+                                  selectedCourseGroup.files,
+                                ).length ? (
                                   <div className="mt-3 space-y-2">
-                                    {selectedCourseGroup.files
-                                      .find(
-                                        (courseFile) =>
-                                          courseFile.auditChecklistReport
-                                            ?.checklist?.length,
-                                      )
-                                      ?.auditChecklistReport?.checklist.map(
-                                        (item) => (
-                                          <div
-                                            key={item.id}
-                                            className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 p-2"
-                                          >
-                                            <p className="text-sm text-slate-700">
-                                              {item.label}
-                                            </p>
-                                            <Badge
-                                              className={getChecklistBadgeClass(
-                                                item.status,
-                                              )}
-                                            >
-                                              {item.status.toUpperCase()}
-                                            </Badge>
-                                          </div>
-                                        ),
-                                      )}
+                                    {buildChecklistEntries(
+                                      selectedCourseGroup.files,
+                                    ).map((item) => (
+                                      <div
+                                        key={item.id}
+                                        className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 p-2"
+                                      >
+                                        <p className="text-sm text-slate-700">
+                                          {item.label}
+                                        </p>
+                                        <Badge
+                                          className={getChecklistBadgeClass(
+                                            item.status,
+                                          )}
+                                        >
+                                          {item.status.toUpperCase()}
+                                        </Badge>
+                                      </div>
+                                    ))}
                                   </div>
                                 ) : (
                                   <p className="mt-3 text-sm text-slate-600">
