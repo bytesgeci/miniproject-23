@@ -60,6 +60,59 @@ interface UserCourseFilesExplorerProps {
   batchGroups: BatchGroup[];
 }
 
+interface ChecklistTemplateItem {
+  id: string;
+  label: string;
+}
+
+const THEORY_CHECKLIST_TEMPLATE: ChecklistTemplateItem[] = [
+  { id: "co_po_mapping", label: "CO-PO Mapping (CO-PO Mapping Level)" },
+  { id: "co_pso_mapping", label: "CO-PO Mapping (CO-PSO Mapping Level)" },
+  { id: "justification", label: "Justification of Mapping" },
+  { id: "course_coverage", label: "Course File Coverage" },
+  { id: "test_qp", label: "Test (QP)" },
+  { id: "test_co_level", label: "Test (CO Level)" },
+  { id: "test_sample_answer", label: "Test (Sample Answer Sheets)" },
+  { id: "test_qp_second", label: "Test (QP) - Second" },
+  { id: "test_co_level_second", label: "Test (CO Level) - Second" },
+  {
+    id: "test_sample_answer_second",
+    label: "Test (Sample Answer Sheets) - Second",
+  },
+  { id: "assignment_qp", label: "Assignment (QP)" },
+  { id: "assignment_co_level", label: "Assignment (CO Level)" },
+  { id: "assignment_sample", label: "Assignment (Sample)" },
+  { id: "assignment_qp_second", label: "Assignment (QP) - Second" },
+  { id: "assignment_co_level_second", label: "Assignment (CO Level) - Second" },
+  { id: "assignment_sample_second", label: "Assignment (Sample) - Second" },
+  { id: "sample_tutorial", label: "Sample Tutorial" },
+  { id: "attendance", label: "Attendance (%)" },
+  { id: "internal_marks", label: "Internal Marks Display" },
+  { id: "course_exit_survey", label: "Course Exit Survey" },
+  { id: "attainment_calculation", label: "Attainment Calculation" },
+  { id: "review_completed", label: "Review Completed" },
+];
+
+const LAB_CHECKLIST_TEMPLATE: ChecklistTemplateItem[] = [
+  { id: "co_po_mapping", label: "CO-PO Mapping" },
+  { id: "co_pso_mapping", label: "CO-PSO Mapping" },
+  { id: "justification", label: "Justification of Mapping" },
+  { id: "course_coverage", label: "Course File Coverage" },
+  { id: "course_execution", label: "Course Execution" },
+  { id: "continuous_evaluation", label: "Continuous Evaluation" },
+  { id: "internal_test_conducted", label: "Internal Test Conducted" },
+  { id: "internal_test_qp", label: "Internal Test Question Paper" },
+  { id: "internal_test_answers", label: "Internal Test Answer Sheets" },
+  { id: "internal_test_marks", label: "Internal Test Mark Display" },
+  { id: "internal_total_marks", label: "Internal Total Marks" },
+  { id: "attendance", label: "Attendance (%)" },
+  { id: "assignment_record", label: "Assignment / Record" },
+  { id: "record_continuous_eval", label: "Record Continuous Evaluation" },
+  { id: "course_exit_survey", label: "Course Exit Survey" },
+  { id: "sample_record", label: "Sample Record" },
+  { id: "mark_calculation", label: "Mark Calculation" },
+];
+
 function getChecklistBadgeClass(status: AuditChecklistStatus) {
   if (status === "yes") {
     return "bg-green-100 text-green-800 border-green-200";
@@ -97,16 +150,34 @@ function toChecklistId(label: string, index: number) {
   return normalized || `item-${index + 1}`;
 }
 
-function buildChecklistEntries(files: CourseFileRecord[]) {
+function isTheoryCourseCode(courseCode: string) {
+  const lastLetter = (courseCode.match(/[a-zA-Z](?!.*[a-zA-Z])/g) ?? [""])[0];
+  return lastLetter.toLowerCase() === "t";
+}
+
+function getChecklistTemplate(courseCode: string) {
+  return isTheoryCourseCode(courseCode)
+    ? THEORY_CHECKLIST_TEMPLATE
+    : LAB_CHECKLIST_TEMPLATE;
+}
+
+function buildChecklistEntries(courseGroup: CourseGroup) {
+  const files = courseGroup.files;
   const reportChecklist = files.find(
     (courseFile) => courseFile.auditChecklistReport?.checklist?.length,
   )?.auditChecklistReport?.checklist;
 
-  if (Array.isArray(reportChecklist) && reportChecklist.length > 0) {
-    return reportChecklist;
-  }
-
+  const statusById = new Map<string, AuditChecklistStatus>();
   const statusByLabel = new Map<string, AuditChecklistStatus>();
+
+  if (Array.isArray(reportChecklist) && reportChecklist.length > 0) {
+    reportChecklist.forEach((item) => {
+      const normalizedStatus =
+        normalizeChecklistStatus(item.status) || "pending";
+      statusById.set(item.id, normalizedStatus);
+      statusByLabel.set(item.label.trim().toLowerCase(), normalizedStatus);
+    });
+  }
 
   files.forEach((file) => {
     const label = String(file.fileType || "").trim();
@@ -118,15 +189,23 @@ function buildChecklistEntries(files: CourseFileRecord[]) {
       normalizeChecklistStatus(file.auditChecklistStatus) || "pending";
 
     // Preserve first non-pending value seen for a file type.
-    if (!statusByLabel.has(label) || statusByLabel.get(label) === "pending") {
-      statusByLabel.set(label, normalizedStatus);
+    const normalizedLabel = label.toLowerCase();
+    if (
+      !statusByLabel.has(normalizedLabel) ||
+      statusByLabel.get(normalizedLabel) === "pending"
+    ) {
+      statusByLabel.set(normalizedLabel, normalizedStatus);
     }
   });
 
-  return Array.from(statusByLabel.entries()).map(([label, status], index) => ({
-    id: toChecklistId(label, index),
-    label,
-    status,
+  const template = getChecklistTemplate(courseGroup.courseCode);
+  return template.map((item, index) => ({
+    id: item.id || toChecklistId(item.label, index),
+    label: item.label,
+    status:
+      statusById.get(item.id) ||
+      statusByLabel.get(item.label.trim().toLowerCase()) ||
+      "pending",
   }));
 }
 
@@ -371,12 +450,11 @@ export function UserCourseFilesExplorer({
                                   </Button>
                                 </div>
 
-                                {buildChecklistEntries(
-                                  selectedCourseGroup.files,
-                                ).length ? (
+                                {buildChecklistEntries(selectedCourseGroup)
+                                  .length ? (
                                   <div className="mt-3 space-y-2">
                                     {buildChecklistEntries(
-                                      selectedCourseGroup.files,
+                                      selectedCourseGroup,
                                     ).map((item) => (
                                       <div
                                         key={item.id}

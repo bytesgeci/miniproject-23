@@ -9,7 +9,7 @@ import { Badge } from "../../ui/badge";
 import { Button } from "../../ui/button";
 import { Alert, AlertDescription } from "../../ui/alert";
 import { Card, CardContent, CardHeader, CardTitle } from "../../ui/card";
-import { Download, Eye, FileText, MessageCircle } from "lucide-react";
+import { Download, Eye, MessageCircle } from "lucide-react";
 import { CourseFile } from "./types";
 import { EntityMessagesPanel } from "../../shared/messages/EntityMessagesPanel";
 import { useAuth } from "@/context/AuthContext";
@@ -52,9 +52,6 @@ export function FileViewDialog({
   const isResponsibleFaculty =
     Boolean(ownerFacultyIdentity) && viewerIdentities.has(ownerFacultyIdentity);
 
-  const publicReviewText =
-    file?.adminRemarks || file?.auditChecklistReport?.remarks || "";
-
   const documentUrl =
     file?.documentUrl ||
     String(
@@ -73,12 +70,6 @@ export function FileViewDialog({
     lowerName.endsWith(".jpeg") ||
     lowerName.endsWith(".webp") ||
     lowerName.endsWith(".gif");
-
-  const showPublicReview =
-    Boolean(publicReviewText) ||
-    Boolean(file?.reviewedBy) ||
-    Boolean(file?.reviewedDate) ||
-    Boolean(file?.auditChecklistReport?.decision);
 
   const openInNewTab = () => {
     if (!documentUrl || typeof window === "undefined") return;
@@ -145,44 +136,6 @@ export function FileViewDialog({
                   the details but cannot make changes.
                 </AlertDescription>
               </Alert>
-
-              {showPublicReview && (
-                <Card className="bg-slate-50 border-slate-200">
-                  <CardHeader>
-                    <CardTitle className="text-base flex items-center gap-2">
-                      <FileText className="h-4 w-4" />
-                      Review Summary
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-2">
-                    {publicReviewText ? (
-                      <p className="text-sm text-slate-800">
-                        {publicReviewText}
-                      </p>
-                    ) : (
-                      <p className="text-sm text-slate-600">
-                        Reviewed. No additional public summary was provided.
-                      </p>
-                    )}
-
-                    {(file.reviewedBy || file.reviewedDate) && (
-                      <p className="text-xs text-slate-500">
-                        {file.reviewedBy
-                          ? `Reviewed by ${file.reviewedBy}`
-                          : "Reviewed"}
-                        {file.reviewedDate ? ` on ${file.reviewedDate}` : ""}
-                      </p>
-                    )}
-
-                    {file.auditChecklistReport?.decision && (
-                      <p className="text-xs text-slate-500">
-                        Decision:{" "}
-                        {file.auditChecklistReport.decision.toUpperCase()}
-                      </p>
-                    )}
-                  </CardContent>
-                </Card>
-              )}
 
               {/* Auditor Remarks */}
               {isResponsibleFaculty && file.auditorRemarks && (
