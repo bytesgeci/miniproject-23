@@ -11,6 +11,7 @@ export const revalidate = 30;
 
 interface CourseFileRecord {
   facultyId?: unknown;
+  facultyID?: unknown;
   uploadedBy?: unknown;
   uploadedById?: unknown;
   facultyEmail?: unknown;
@@ -19,6 +20,9 @@ interface CourseFileRecord {
   facultyName?: unknown;
   courseCode?: unknown;
   courseName?: unknown;
+  fileName?: unknown;
+  academicYear?: unknown;
+  semester?: unknown;
 }
 
 function normalizeIdentity(value: unknown) {
@@ -27,14 +31,36 @@ function normalizeIdentity(value: unknown) {
     .toLowerCase();
 }
 
+function normalizeIdForMatching(value: unknown) {
+  if (value && typeof value === "object") {
+    const mongoObject = value as { $oid?: unknown; toString?: () => string };
+
+    if (typeof mongoObject.$oid === "string") {
+      value = mongoObject.$oid;
+    } else if (typeof mongoObject.toString === "function") {
+      value = mongoObject.toString();
+    }
+  }
+
+  const normalized = normalizeIdentity(value);
+  if (!normalized) {
+    return [] as string[];
+  }
+
+  const variants = new Set<string>([normalized]);
+  variants.add(
+    normalized.replace(/^objectid\(["']?/, "").replace(/["']?\)$/, ""),
+  );
+  variants.add(normalized.replace(/^\{"\$oid":"/, "").replace(/"\}$/, ""));
+
+  return [...variants].filter(Boolean);
+}
+
 function buildIdentitySet(values: unknown[]) {
   const identities = new Set<string>();
 
   values.forEach((value) => {
-    const normalized = normalizeIdentity(value);
-    if (normalized) {
-      identities.add(normalized);
-    }
+    normalizeIdForMatching(value).forEach((variant) => identities.add(variant));
   });
 
   return identities;
@@ -43,7 +69,26 @@ function buildIdentitySet(values: unknown[]) {
 function toCourseLabel(record: CourseFileRecord) {
   const code = String(record.courseCode ?? "").trim();
   const name = String(record.courseName ?? "").trim();
-  return [code, name].filter(Boolean).join(" - ");
+  const baseLabel = [code, name].filter(Boolean).join(" - ");
+  if (baseLabel) {
+    return baseLabel;
+  }
+
+  const academicYear = String(record.academicYear ?? "").trim();
+  const semester = String(record.semester ?? "").trim();
+  const fileName = String(record.fileName ?? "").trim();
+
+  const fileStem = fileName
+    ? fileName
+        .replace(/\.[^./\\]+$/, "")
+        .replace(/[_-]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+    : "";
+
+  const fallbackBase = fileStem || "Uploaded course file";
+  const suffix = [academicYear, semester].filter(Boolean).join(" ");
+  return suffix ? `${fallbackBase} (${suffix})` : fallbackBase;
 }
 
 export default async function UserDashboardPage() {
@@ -84,6 +129,7 @@ export default async function UserDashboardPage() {
         (courseFiles || []).forEach((file) => {
           const fileIdentities = buildIdentitySet([
             file.facultyId,
+            file.facultyID,
             file.uploadedBy,
             file.uploadedById,
             file.facultyEmail,
