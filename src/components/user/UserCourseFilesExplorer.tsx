@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -244,13 +244,50 @@ export function UserCourseFilesExplorer({
     useState<CourseGroup | null>(null);
   const [selectedCourseScope, setSelectedCourseScope] = useState<string>("");
   const [showMergedPreview, setShowMergedPreview] = useState(false);
+  const [previewRenderReady, setPreviewRenderReady] = useState(false);
   const [visibleCountBySemester, setVisibleCountBySemester] = useState<
     Record<string, number>
   >({});
+  const previewRenderTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (previewRenderTimerRef.current !== null) {
+        window.clearTimeout(previewRenderTimerRef.current);
+      }
+    };
+  }, []);
 
   const selectedGroup = selectedBatch
     ? (batchGroups.find((group) => group.batch === selectedBatch) ?? null)
     : null;
+  const selectedChecklistEntries = useMemo(
+    () =>
+      selectedCourseGroup ? buildChecklistEntries(selectedCourseGroup) : [],
+    [selectedCourseGroup],
+  );
+
+  const toggleMergedPreview = () => {
+    if (showMergedPreview) {
+      setShowMergedPreview(false);
+      setPreviewRenderReady(false);
+      if (previewRenderTimerRef.current !== null) {
+        window.clearTimeout(previewRenderTimerRef.current);
+        previewRenderTimerRef.current = null;
+      }
+      return;
+    }
+
+    // Flip button state immediately, then defer heavy preview render.
+    setShowMergedPreview(true);
+    setPreviewRenderReady(false);
+    if (previewRenderTimerRef.current !== null) {
+      window.clearTimeout(previewRenderTimerRef.current);
+    }
+    previewRenderTimerRef.current = window.setTimeout(() => {
+      setPreviewRenderReady(true);
+    }, 0);
+  };
 
   return (
     <div className="space-y-4">
@@ -272,6 +309,7 @@ export function UserCourseFilesExplorer({
               setSelectedCourseGroup(null);
               setSelectedCourseScope("");
               setShowMergedPreview(false);
+              setPreviewRenderReady(false);
             }}
           >
             Back to Batches
@@ -299,6 +337,7 @@ export function UserCourseFilesExplorer({
                     setSelectedCourseGroup(null);
                     setSelectedCourseScope("");
                     setShowMergedPreview(false);
+                    setPreviewRenderReady(false);
                   }}
                   className="rounded-xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-slate-300"
                 >
@@ -381,7 +420,7 @@ export function UserCourseFilesExplorer({
                                 Click to view one shared checklist for this
                                 course.
                               </p>
-                              <div className="mt-3 flex justify-end">
+                              <div className="mt-3 flex justify-end gap-2">
                                 <Button
                                   size="sm"
                                   onClick={() => {
@@ -394,12 +433,14 @@ export function UserCourseFilesExplorer({
                                       setSelectedCourseGroup(null);
                                       setSelectedCourseScope("");
                                       setShowMergedPreview(false);
+                                      setPreviewRenderReady(false);
                                       return;
                                     }
 
                                     setSelectedCourseGroup(courseGroup);
                                     setSelectedCourseScope(semesterScope);
                                     setShowMergedPreview(false);
+                                    setPreviewRenderReady(false);
                                   }}
                                 >
                                   {selectedCourseGroup?.key ===
@@ -408,6 +449,18 @@ export function UserCourseFilesExplorer({
                                     ? "Hide Checklist"
                                     : "View Checklist"}
                                 </Button>
+
+                                {selectedCourseGroup?.key === courseGroup.key &&
+                                  selectedCourseScope === semesterScope && (
+                                    <Button
+                                      size="sm"
+                                      onClick={toggleMergedPreview}
+                                    >
+                                      {showMergedPreview
+                                        ? "Hide All Documents"
+                                        : "Preview All Documents"}
+                                    </Button>
+                                  )}
                               </div>
                             </div>
                           ))}
@@ -438,24 +491,11 @@ export function UserCourseFilesExplorer({
                                     Checklist - {selectedCourseGroup.courseCode}{" "}
                                     - {selectedCourseGroup.courseName}
                                   </p>
-                                  <Button
-                                    size="sm"
-                                    onClick={() =>
-                                      setShowMergedPreview((prev) => !prev)
-                                    }
-                                  >
-                                    {showMergedPreview
-                                      ? "Hide All Documents"
-                                      : "Preview All Documents"}
-                                  </Button>
                                 </div>
 
-                                {buildChecklistEntries(selectedCourseGroup)
-                                  .length ? (
+                                {selectedChecklistEntries.length ? (
                                   <div className="mt-3 space-y-2">
-                                    {buildChecklistEntries(
-                                      selectedCourseGroup,
-                                    ).map((item) => (
+                                    {selectedChecklistEntries.map((item) => (
                                       <div
                                         key={item.id}
                                         className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 p-2"
@@ -479,7 +519,13 @@ export function UserCourseFilesExplorer({
                                   </p>
                                 )}
 
-                                {showMergedPreview && (
+                                {showMergedPreview && !previewRenderReady && (
+                                  <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+                                    Preparing previews...
+                                  </div>
+                                )}
+
+                                {showMergedPreview && previewRenderReady && (
                                   <div className="mt-4 space-y-4">
                                     {selectedCourseGroup.files.map(
                                       (courseFile) => {
