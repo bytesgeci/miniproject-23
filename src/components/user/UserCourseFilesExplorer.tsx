@@ -460,15 +460,11 @@ export function UserCourseFilesExplorer({
                                     if (isSameSelection) {
                                       setSelectedCourseGroup(null);
                                       setSelectedCourseScope("");
-                                      setShowMergedPreview(false);
-                                      setPreviewRenderReady(false);
                                       return;
                                     }
 
                                     setSelectedCourseGroup(courseGroup);
                                     setSelectedCourseScope(semesterScope);
-                                    setShowMergedPreview(false);
-                                    setPreviewRenderReady(false);
                                   }}
                                 >
                                   Show Checklist
