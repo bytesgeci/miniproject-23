@@ -10,10 +10,12 @@ import type {
 } from "@/components/AuditorDashboard/types";
 import type {
   BatchCourseOverview,
+  BatchFacultySummary,
   CareerStats,
   DashboardStats as StaffStats,
   Student,
 } from "@/components/StaffAdvisorDashboard/types";
+import type { CourseFile } from "@/components/CourseFileManager/types";
 import { getAllUsers } from "@/lib/userStore";
 import { normalizeRoleInput } from "@/lib/adminConfig";
 import { readJsonFile } from "@/lib/jsonDb";
@@ -1373,16 +1375,266 @@ export async function getStaffAdvisorDashboardData(
 
     const students = studentsData.students || [];
     const totalStudents = students.length;
+    const placedStudents = students.filter(
+      (student) => student.placementStatus === "Placed",
+    ).length;
+    const inProcess = students.filter(
+      (student) => student.placementStatus === "In Process",
+    ).length;
+    const averageCGPA = totalStudents
+      ? Number(
+          (
+            students.reduce((sum, student) => sum + (student.cgpa || 0), 0) /
+            totalStudents
+          ).toFixed(1),
+        )
+      : 0;
+    const averageAttendance = totalStudents
+      ? Math.round(
+          students.reduce(
+            (sum, student) => sum + (student.attendance || 0),
+            0,
+          ) / totalStudents,
+        )
+      : 0;
+
+    const batchYears = Array.from(
+      new Set(
+        students
+          .map((student) => String(student.batchYear || "").trim())
+          .filter(Boolean),
+      ),
+    ).sort((a, b) => b.localeCompare(a));
+    const batchYearSet = new Set(batchYears);
+
+    const [courseFiles, users] = await Promise.all([
+      readJsonFile<CourseFile[]>("courseFiles.json"),
+      getAllUsers(),
+    ]);
+
+    const usersByIdentity = new Map<string, (typeof users)[number]>();
+    for (const user of users) {
+      const candidates = buildUserIdentityCandidates({
+        id: String(user.id || ""),
+        username: String(user.username || ""),
+        email: String(user.email || ""),
+        firebaseUid: String(user.firebaseUid || ""),
+      });
+
+      candidates.forEach((identity) => {
+        if (!usersByIdentity.has(identity)) {
+          usersByIdentity.set(identity, user);
+        }
+      });
+    }
+
+    const normalizeInReviewStatus = (value?: string | null) => {
+      const normalized = normalizeAuditStatus(value);
+      return [
+        "pending",
+        "submitted",
+        "in_review",
+        "in review",
+        "draft",
+      ].includes(normalized);
+    };
+
+    type BatchAggregation = {
+      progress: {
+        batchYear: string;
+        totalFiles: number;
+        approvedFiles: number;
+        inReviewFiles: number;
+        rejectedFiles: number;
+        completionRate: number;
+      };
+      facultyMap: Map<string, BatchFacultySummary>;
+    };
+
+    const groupsByBatch = new Map<string, BatchAggregation>();
+
+    for (const file of courseFiles || []) {
+      const batchYear = String(file?.academicYear || "").trim();
+      if (
+        !batchYear ||
+        (batchYearSet.size > 0 && !batchYearSet.has(batchYear))
+      ) {
+        continue;
+      }
+
+      const group =
+        groupsByBatch.get(batchYear) ||
+        (() => {
+          const created: BatchAggregation = {
+            progress: {
+              batchYear,
+              totalFiles: 0,
+              approvedFiles: 0,
+              inReviewFiles: 0,
+              rejectedFiles: 0,
+              completionRate: 0,
+            },
+            facultyMap: new Map<string, BatchFacultySummary>(),
+          };
+          groupsByBatch.set(batchYear, created);
+          return created;
+        })();
+
+      const status = normalizeAuditStatus(file?.status);
+      group.progress.totalFiles += 1;
+      if (isApprovedAuditStatus(status)) {
+        group.progress.approvedFiles += 1;
+      } else if (isRejectedAuditStatus(status)) {
+        group.progress.rejectedFiles += 1;
+      } else if (normalizeInReviewStatus(status)) {
+        group.progress.inReviewFiles += 1;
+      }
+
+      const fileIdentityCandidates = [
+        String(file?.facultyId || ""),
+        String((file as { facultyEmail?: string }).facultyEmail || ""),
+        String((file as { email?: string }).email || ""),
+        String((file as { username?: string }).username || ""),
+        String((file as { uploadedBy?: string }).uploadedBy || ""),
+        String((file as { uploadedById?: string }).uploadedById || ""),
+      ]
+        .map(normalizeIdentity)
+        .filter(Boolean);
+
+      const resolvedUser =
+        fileIdentityCandidates
+          .map((candidate) => usersByIdentity.get(candidate))
+          .find(Boolean) || null;
+
+      const fallbackFacultyId =
+        String(file?.facultyId || "").trim() ||
+        String(file?.facultyName || "").trim() ||
+        "unknown-faculty";
+      const memberId = String(resolvedUser?.id || fallbackFacultyId);
+
+      const existingMember = group.facultyMap.get(memberId);
+      const roleValue = Array.isArray(resolvedUser?.roles)
+        ? String(resolvedUser?.roles[0] || resolvedUser?.role || "faculty")
+        : String(resolvedUser?.role || "faculty");
+      const nextMember: BatchFacultySummary = existingMember || {
+        id: memberId,
+        name:
+          String(resolvedUser?.name || "").trim() ||
+          String(file?.facultyName || "").trim() ||
+          "Faculty Member",
+        department:
+          String(resolvedUser?.department || "").trim() ||
+          String(file?.department || "").trim() ||
+          "",
+        role: roleValue,
+        email:
+          String(resolvedUser?.email || "").trim() ||
+          String(
+            (file as { facultyEmail?: string }).facultyEmail || "",
+          ).trim() ||
+          undefined,
+        phone: String(resolvedUser?.phone || "").trim() || undefined,
+        specialization:
+          String(
+            (resolvedUser as { specialization?: string } | null)
+              ?.specialization || "",
+          ).trim() || undefined,
+        experience:
+          String(
+            (resolvedUser as { experience?: string } | null)?.experience || "",
+          ).trim() || undefined,
+        courses: [],
+        resumeUrl:
+          String(
+            (resolvedUser as { resumeUrl?: string } | null)?.resumeUrl || "",
+          ).trim() || undefined,
+        resumeFileName:
+          String(
+            (resolvedUser as { resumeFileName?: string } | null)
+              ?.resumeFileName || "",
+          ).trim() || undefined,
+        filesTotal: 0,
+        filesApproved: 0,
+        filesInReview: 0,
+        filesRejected: 0,
+      };
+
+      nextMember.filesTotal += 1;
+      if (isApprovedAuditStatus(status)) {
+        nextMember.filesApproved += 1;
+      } else if (isRejectedAuditStatus(status)) {
+        nextMember.filesRejected += 1;
+      } else if (normalizeInReviewStatus(status)) {
+        nextMember.filesInReview += 1;
+      }
+
+      const courseLabel = [
+        String(file?.courseCode || "").trim(),
+        String(file?.courseName || "").trim(),
+      ]
+        .filter(Boolean)
+        .join(" - ");
+      if (courseLabel) {
+        const existingCourses = Array.isArray(nextMember.courses)
+          ? nextMember.courses
+          : [];
+        if (!existingCourses.includes(courseLabel)) {
+          nextMember.courses = [...existingCourses, courseLabel];
+        }
+      }
+
+      group.facultyMap.set(memberId, nextMember);
+    }
+
+    const groups = Array.from(groupsByBatch.values())
+      .map((group) => {
+        const completionRate = group.progress.totalFiles
+          ? Math.round(
+              (group.progress.approvedFiles / group.progress.totalFiles) * 100,
+            )
+          : 0;
+
+        return {
+          progress: {
+            ...group.progress,
+            completionRate,
+          },
+          faculty: Array.from(group.facultyMap.values()).sort((a, b) =>
+            a.name.localeCompare(b.name),
+          ),
+        };
+      })
+      .sort((a, b) => b.progress.batchYear.localeCompare(a.progress.batchYear));
+
+    const overallTotalFiles = groups.reduce(
+      (sum, group) => sum + group.progress.totalFiles,
+      0,
+    );
+    const overallApprovedFiles = groups.reduce(
+      (sum, group) => sum + group.progress.approvedFiles,
+      0,
+    );
+    const overallInReviewFiles = groups.reduce(
+      (sum, group) => sum + group.progress.inReviewFiles,
+      0,
+    );
+    const overallRejectedFiles = groups.reduce(
+      (sum, group) => sum + group.progress.rejectedFiles,
+      0,
+    );
+    const facultyIds = new Set(
+      groups.flatMap((group) => group.faculty.map((member) => member.id)),
+    );
 
     const stats: StaffStats = {
       totalStudents,
-      batchYear: "All",
-      placedStudents: 0,
-      inProcess: 0,
-      averageCGPA: 0,
-      averageAttendance: 0,
-      totalFaculty: 0,
-      approvedFiles: 0,
+      batchYear: batchYears[0] || "All",
+      placedStudents,
+      inProcess,
+      averageCGPA,
+      averageAttendance,
+      totalFaculty: facultyIds.size,
+      approvedFiles: overallApprovedFiles,
       approvedReports: 0,
     };
 
@@ -1397,13 +1649,15 @@ export async function getStaffAdvisorDashboardData(
     const batchCourseOverview: BatchCourseOverview = {
       overall: {
         batchYear: "All",
-        totalFiles: 0,
-        approvedFiles: 0,
-        inReviewFiles: 0,
-        rejectedFiles: 0,
-        completionRate: 0,
+        totalFiles: overallTotalFiles,
+        approvedFiles: overallApprovedFiles,
+        inReviewFiles: overallInReviewFiles,
+        rejectedFiles: overallRejectedFiles,
+        completionRate: overallTotalFiles
+          ? Math.round((overallApprovedFiles / overallTotalFiles) * 100)
+          : 0,
       },
-      groups: [],
+      groups,
     };
 
     const data: StaffAdvisorDashboardData = {
