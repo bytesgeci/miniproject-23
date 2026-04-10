@@ -39,9 +39,15 @@ function normalizeIdentity(value?: string | null) {
 interface DashboardFacultyMember extends FacultyMember {}
 
 const STAFF_ADVISOR_DASHBOARD_CACHE_TTL_MS = 30000;
+const FACULTY_DASHBOARD_CACHE_TTL_MS = 30000;
+const DASHBOARD_API_REQUEST_TIMEOUT_MS = 1500;
 const staffAdvisorDashboardCache = new Map<
   string,
   { expiresAt: number; data: StaffAdvisorDashboardData }
+>();
+const facultyDashboardCache = new Map<
+  string,
+  { expiresAt: number; data: FacultyDashboardData }
 >();
 
 export interface FacultyDashboardData {
@@ -842,6 +848,11 @@ async function fetchFromDashboardAPI<T>(endpoint: string): Promise<T> {
 
   for (const baseUrl of baseUrlCandidates) {
     const requestUrl = `${baseUrl}/api/dashboard${endpoint}`;
+    const controller = new AbortController();
+    const timeoutHandle = setTimeout(() => {
+      controller.abort();
+    }, DASHBOARD_API_REQUEST_TIMEOUT_MS);
+
     try {
       const response = await fetch(requestUrl, {
         method: "GET",
@@ -850,9 +861,11 @@ async function fetchFromDashboardAPI<T>(endpoint: string): Promise<T> {
         },
         credentials: "include",
         cache: "no-store",
+        signal: controller.signal,
       });
 
       if (response.ok) {
+        clearTimeout(timeoutHandle);
         return response.json();
       }
 
@@ -874,6 +887,8 @@ async function fetchFromDashboardAPI<T>(endpoint: string): Promise<T> {
           error instanceof Error ? error.message : String(error)
         }`,
       );
+    } finally {
+      clearTimeout(timeoutHandle);
     }
   }
 
@@ -886,6 +901,13 @@ async function fetchFromDashboardAPI<T>(endpoint: string): Promise<T> {
 export async function getFacultyDashboardData(
   username?: string | null,
 ): Promise<FacultyDashboardData> {
+  const normalizedUsername = normalizeIdentity(username);
+  const cacheKey = normalizedUsername || "all";
+  const cachedEntry = facultyDashboardCache.get(cacheKey);
+  if (cachedEntry && cachedEntry.expiresAt > Date.now()) {
+    return cloneFacultyDashboardData(cachedEntry.data);
+  }
+
   const normalizeBaseUrl = (value: string | undefined) => {
     const normalized = String(value || "")
       .trim()
@@ -908,10 +930,13 @@ export async function getFacultyDashboardData(
   ].filter(Boolean);
 
   if (backendUrlCandidates.length === 0) {
-    return buildLocalFacultyDashboardData(username);
+    const localData = await buildLocalFacultyDashboardData(username);
+    facultyDashboardCache.set(cacheKey, {
+      data: cloneFacultyDashboardData(localData),
+      expiresAt: Date.now() + FACULTY_DASHBOARD_CACHE_TTL_MS,
+    });
+    return cloneFacultyDashboardData(localData);
   }
-
-  const normalizedUsername = normalizeIdentity(username);
 
   try {
     // Fetch dashboard data from MongoDB
@@ -996,10 +1021,17 @@ export async function getFacultyDashboardData(
       }
     }
 
-    return {
+    const result = {
       stats,
       facultyMembers,
     };
+
+    facultyDashboardCache.set(cacheKey, {
+      data: cloneFacultyDashboardData(result),
+      expiresAt: Date.now() + FACULTY_DASHBOARD_CACHE_TTL_MS,
+    });
+
+    return cloneFacultyDashboardData(result);
   } catch (error) {
     console.error(
       "Error fetching faculty dashboard data from backend API:",
@@ -1007,7 +1039,12 @@ export async function getFacultyDashboardData(
     );
 
     try {
-      return await buildLocalFacultyDashboardData(username);
+      const localData = await buildLocalFacultyDashboardData(username);
+      facultyDashboardCache.set(cacheKey, {
+        data: cloneFacultyDashboardData(localData),
+        expiresAt: Date.now() + FACULTY_DASHBOARD_CACHE_TTL_MS,
+      });
+      return cloneFacultyDashboardData(localData);
     } catch (fallbackError) {
       console.error(
         "Fallback faculty dashboard data load failed:",
@@ -1711,5 +1748,6 @@ export async function getStaffAdvisorDashboardData(
 }
 
 export function clearDashboardCache() {
+  facultyDashboardCache.clear();
   staffAdvisorDashboardCache.clear();
 }

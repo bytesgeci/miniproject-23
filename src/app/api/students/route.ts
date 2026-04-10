@@ -7,6 +7,8 @@ import { resolveStaffAdvisorScope } from "@/lib/staffAdvisorScope";
 import { isValidBatchYear, normalizeBatchYear } from "@/lib/batchYear";
 import { createCachedResponse, apiCache } from "@/lib/apiCache";
 import { clearDashboardCache } from "@/lib/dashboardData";
+import { findUserById, findUserByUsername } from "@/lib/userStore";
+import { normalizeRoleInput } from "@/lib/adminConfig";
 
 const VALID_SEMESTERS = new Set([
   "S1",
@@ -68,7 +70,41 @@ export async function POST(request: NextRequest) {
   try {
     const db = await getMongoDb();
     await ensureNormalizedIndexes(db);
-    const advisorScope = await resolveStaffAdvisorScope(request);
+    const payload = await request.json();
+
+    let advisorScope = await resolveStaffAdvisorScope(request);
+    if (!advisorScope) {
+      const fallbackUsername = String(payload?.username ?? "").trim();
+      const fallbackAdvisorId = String(payload?.advisorId ?? "").trim();
+
+      const fallbackUserByUsername = fallbackUsername
+        ? await findUserByUsername(fallbackUsername)
+        : null;
+      const fallbackUserById = fallbackAdvisorId
+        ? await findUserById(fallbackAdvisorId)
+        : null;
+      const fallbackUser = fallbackUserByUsername ?? fallbackUserById;
+
+      if (fallbackUser) {
+        const roles = Array.isArray(fallbackUser.roles)
+          ? fallbackUser.roles
+          : [fallbackUser.role];
+        const normalizedRoles = roles
+          .map((role) => normalizeRoleInput(role))
+          .filter(Boolean);
+        const isStaffAdvisor =
+          normalizedRoles.includes("staff-advisor") ||
+          fallbackUser.isStaffAdvisor === true;
+
+        if (isStaffAdvisor) {
+          advisorScope = {
+            advisorId: String(fallbackUser.id),
+            username: String(fallbackUser.username || fallbackUsername),
+          };
+        }
+      }
+    }
+
     if (!advisorScope) {
       return NextResponse.json(
         { error: "Unauthorized staff advisor context" },
@@ -76,7 +112,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const payload = await request.json();
     const timestamp = new Date().toISOString();
 
     const rollNumber = String(payload.rollNumber ?? "").trim();
