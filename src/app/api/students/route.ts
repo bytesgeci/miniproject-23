@@ -200,9 +200,15 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ student: newStudent, students: scopedStudents });
   } catch (error) {
-    console.error("Student create error:", error);
+    const errorMsg = error instanceof Error ? error.message : String(error);
+    const errorStack = error instanceof Error ? error.stack : "";
+    console.error("Student create error:", {
+      message: errorMsg,
+      stack: errorStack,
+      fullError: error,
+    });
     return NextResponse.json(
-      { error: "Failed to create student" },
+      { error: `Failed to create student: ${errorMsg}` },
       { status: 500 },
     );
   }
