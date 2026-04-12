@@ -15,13 +15,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../ui/select";
-import { Mail, Lock, User, Building, GraduationCap } from "lucide-react";
+import {
+  Mail,
+  Lock,
+  User,
+  Building,
+  GraduationCap,
+  Loader2,
+} from "lucide-react";
 import { toast } from "sonner";
 import { useState } from "react";
 import { SignUpFormData } from "./types";
 
 interface SignUpFormProps {
-  onSignUpSuccess: () => void;
+  onSignUpSuccess: () => Promise<void> | void;
   onSwitchToSignIn: () => void;
 }
 
@@ -29,6 +36,7 @@ export function SignUpForm({
   onSignUpSuccess,
   onSwitchToSignIn,
 }: SignUpFormProps) {
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState<SignUpFormData>({
     email: "",
     password: "",
@@ -37,7 +45,7 @@ export function SignUpForm({
     department: "",
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (
@@ -61,10 +69,12 @@ export function SignUpForm({
       return;
     }
 
-    // TODO: Replace with actual API call
-    // POST /api/auth/signup
-    toast.success("Account created successfully! Please sign in.");
-    onSignUpSuccess();
+    try {
+      setIsSubmitting(true);
+      await onSignUpSuccess();
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -166,8 +176,15 @@ export function SignUpForm({
             </div>
           </div>
 
-          <Button type="submit" className="w-full">
-            Create Account
+          <Button type="submit" className="w-full" disabled={isSubmitting}>
+            {isSubmitting ? (
+              <span className="inline-flex items-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Creating Account...
+              </span>
+            ) : (
+              "Create Account"
+            )}
           </Button>
 
           <div className="text-center text-sm">

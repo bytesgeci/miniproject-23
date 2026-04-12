@@ -15,7 +15,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Mail, Lock, User, Building, GraduationCap } from "lucide-react";
+import {
+  Mail,
+  Lock,
+  User,
+  Building,
+  GraduationCap,
+  Loader2,
+} from "lucide-react";
 import { toast } from "sonner";
 import { useState } from "react";
 import { SignUpFormData, SignUpResult } from "./types";
@@ -187,7 +194,14 @@ export function SignUpForm({
           </div>
 
           <Button type="submit" className="w-full" disabled={isSubmitting}>
-            {isSubmitting ? "Creating Account..." : "Create Account"}
+            {isSubmitting ? (
+              <span className="inline-flex items-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Creating Account...
+              </span>
+            ) : (
+              "Create Account"
+            )}
           </Button>
 
           <div className="text-center text-sm">
